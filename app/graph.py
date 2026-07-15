@@ -8,7 +8,11 @@ the thinking evolves. Next iteration will add a second node and a
 conditional edge; main.py won't change.
 """
 
+import logging
+
 from langgraph.graph import END, START, StateGraph
+
+log = logging.getLogger("app.graph")
 
 from app.anthropic_client import chat as claude_chat
 from app.llm import chat as free_chat
@@ -39,12 +43,16 @@ def generate(state: State) -> dict:
     user_msg = state["message"]
     provider = state.get("provider", "free")
 
-    if provider == "claude":
+    try:
+        if provider == "claude":
+            text = claude_chat(SYSTEM_PROMPT, user_msg)
+        elif provider == "gpt":
+            text = free_chat(SYSTEM_PROMPT, user_msg, model=_GPT_MODEL)
+        else:
+            text = free_chat(SYSTEM_PROMPT, user_msg)
+    except Exception:
+        log.warning("Primary provider %s failed, falling back to claude", provider)
         text = claude_chat(SYSTEM_PROMPT, user_msg)
-    elif provider == "gpt":
-        text = free_chat(SYSTEM_PROMPT, user_msg, model=_GPT_MODEL)
-    else:
-        text = free_chat(SYSTEM_PROMPT, user_msg)
 
     return {"reply": text}
 
