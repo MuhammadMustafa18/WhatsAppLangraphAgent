@@ -29,13 +29,15 @@ def _get_client() -> OpenAI:
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
-def chat(system: str, user: str) -> str:
-    """Single-turn chat. Returns the model's reply text."""
-    # `auto` lets FreeLLMAPI's router pick the best available model.
-    # Pin a specific model name (e.g. "gemini-2.5-flash") to skip routing.
-    model = os.environ.get("OPENAI_MODEL", "auto")
+def chat(system: str, user: str, model: str | None = None) -> str:
+    """Single-turn chat. Returns the model's reply text.
+
+    `model=None` lets FreeLLMAPI's router pick (OPENAI_MODEL=auto).
+    Pass a specific model name (e.g. "gpt-oss-120b") to skip routing.
+    """
+    chosen = model or os.environ.get("OPENAI_MODEL", "auto")
     resp = _get_client().chat.completions.create(
-        model=model,
+        model=chosen,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},

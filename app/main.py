@@ -136,20 +136,33 @@ async def webhook(request: Request) -> dict[str, str]:
         log.warning("Skipping unreplyable chat_id=%s", chat_id)
         return {"status": "skipped-unreplyable-chat"}
 
+    # Slash-prefix routing: /claude -> Anthropic, /gpt -> FreeLLMAPI (pinned).
+    # Anything else routes through FreeLLMAPI's auto router.
+    provider = "free"
+    lower = body.lower().lstrip()
+    for prefix, name in (("/claude", "claude"), ("/gpt", "gpt")):
+        if lower.startswith(prefix):
+            provider = name
+            body = body[len(prefix):].lstrip()
+            log.info("routing to provider=%s", name)
+            break
+
     # ACK fast — OpenWA's webhook timeout is ~10s, and an LLM call can
     # take 2–5s. If we block here, we'd risk hitting the timeout under
     # load and OpenWA would retry, doubling our work. Instead, hand off
     # to a background task and return immediately.
-    asyncio.create_task(_handle(chat_id, body))
+    asyncio.create_task(_handle(chat_id, body, provider))
     return {"status": "queued"}
 
 
-async def _handle(chat_id: str, body: str) -> None:
+async def _handle(chat_id: str, body: str, provider: str = "free") -> None:
     """Background task: run the graph, send the reply. Errors are logged
     but never raised — the webhook already returned 200, so we just
     surface failures to the log for debugging."""
     try:
-        result = await graph.ainvoke({"message": body, "reply": ""})
+        result = await graph.ainvoke(
+            {"message": body, "reply": "", "provider": provider}
+        )
         reply = (result.get("reply") or "").strip()
         if not reply:
             log.warning("graph returned empty reply for chat=%s body=%r", chat_id, body[:80])
@@ -169,6 +182,6 @@ async def _handle(chat_id: str, body: str) -> None:
                 chat_id, exc.response.status_code, body_text,
             )
         except httpx.HTTPError:
-            log.exception("OpenWA send-text failed for chat_id=%s", chat_id)
+            log.exception("OpenWA send-text transport error for chat_id=%s", chat_id)
     except Exception:
         log.exception("Background handler crashed for chat_id=%s", chat_id)
