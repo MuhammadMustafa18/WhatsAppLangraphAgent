@@ -26,6 +26,9 @@ Thumbs.db
 # Tool state files (internal)
 .mimocode/
 
+# Local planning notes (not part of the project)
+plan.md
+
 # Docker
 .docker/
 

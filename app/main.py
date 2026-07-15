@@ -136,39 +136,66 @@ async def webhook(request: Request) -> dict[str, str]:
         log.warning("Skipping unreplyable chat_id=%s", chat_id)
         return {"status": "skipped-unreplyable-chat"}
 
-    # Slash-prefix routing: /claude -> Anthropic, /gpt -> FreeLLMAPI (pinned).
-    # Anything else routes through FreeLLMAPI's auto router.
+    # Slash-prefix parsing. Two passes because prefixes can combine:
+    #   /claude/services hi      -> provider=claude, persona=services
+    #   /resume help with CV     -> provider=free,   persona=resume
+    #   what do you offer        -> provider=free,   persona unset (classify)
+    # Provider prefix must come first; persona prefix can come second.
     provider = "free"
-    lower = body.lower().lstrip()
+    persona: str | None = None
+    text = body.lower().lstrip()
+
+    # Parse provider prefix first (only one).
     for prefix, name in (("/claude", "claude"), ("/gpt", "gpt")):
-        if lower.startswith(prefix):
+        if text.startswith(prefix):
             provider = name
-            body = body[len(prefix):].lstrip()
+            text = text[len(prefix):].lstrip()
             log.info("routing to provider=%s", name)
             break
+
+    # Then parse persona prefix (only one).
+    for prefix, name in (("/resume", "resume"), ("/services", "services"), ("/personal", "personal")):
+        if text.startswith(prefix):
+            persona = name
+            text = text[len(prefix):].lstrip()
+            log.info("routing to persona=%s", name)
+            break
+
+    # Whatever's left of text is what the LLM sees.
+    body = text.strip()
+    if not body:
+        # Slash command without any actual message.
+        log.warning("empty body after slash parse (chat=%s)", chat_id)
+        return {"status": "empty-after-slash"}
 
     # ACK fast — OpenWA's webhook timeout is ~10s, and an LLM call can
     # take 2–5s. If we block here, we'd risk hitting the timeout under
     # load and OpenWA would retry, doubling our work. Instead, hand off
     # to a background task and return immediately.
-    asyncio.create_task(_handle(chat_id, body, provider))
+    initial_state = {"message": body, "reply": "", "provider": provider}
+    if persona:
+        initial_state["persona"] = persona
+    asyncio.create_task(_handle(chat_id, initial_state))
     return {"status": "queued"}
 
 
-async def _handle(chat_id: str, body: str, provider: str = "free") -> None:
+async def _handle(chat_id: str, initial_state: dict) -> None:
     """Background task: run the graph, send the reply. Errors are logged
     but never raised — the webhook already returned 200, so we just
     surface failures to the log for debugging."""
     try:
-        result = await graph.ainvoke(
-            {"message": body, "reply": "", "provider": provider}
-        )
+        result = await graph.ainvoke(initial_state)
         reply = (result.get("reply") or "").strip()
         if not reply:
-            log.warning("graph returned empty reply for chat=%s body=%r", chat_id, body[:80])
+            log.warning("graph returned empty reply for chat=%s", chat_id)
             return
 
-        log.info("chat=%s in=%r out=%r", chat_id, body, reply)
+        log.info("chat=%s in=%r out=%r persona=%s provider=%s",
+                 chat_id,
+                 initial_state.get("message"),
+                 reply,
+                 result.get("persona", "?"),
+                 initial_state.get("provider", "?"))
         try:
             await _client.send_text(chat_id=chat_id, text=reply)
         except httpx.HTTPStatusError as exc:
