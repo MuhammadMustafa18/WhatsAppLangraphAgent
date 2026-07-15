@@ -1,0 +1,76 @@
+# Iteration 1: OpenWA + LangGraph app + ngrok, all on one `docker compose up`.
+#
+# Service map:
+#
+#   ngrok ──> ngrok dashboard 4040  (UI to see the public URL)
+#     │
+#     └─ tunnel → langgraph-app:8000/webhook
+#                       ▲
+#                       │ (delivered by OpenWA's webhook config)
+#                  OpenWA API 2785  ──>  dashboard & REST
+#
+# Students never edit this file. They:
+#   1. Copy .env.example -> .env
+#   2. Fill NGROK_AUTHTOKEN
+#   3. `docker compose up -d`
+#   4. Read the API key from logs (see SETUP.md)
+#   5. Paste it into .env, `docker compose up -d` again
+#   6. Open the ngrok URL printed in ngrok logs
+#   7. Configure OpenWA webhook to point at `<ngrok-url>/webhook`
+#   8. Scan the QR in the OpenWA dashboard, send a message.
+
+services:
+  openwa:
+    # OpenWA publishes GHCR images. We pin to a recent stable tag; bump
+    # deliberately when you want to teach upgrades.
+    image: ghcr.io/rmyndharis/openwa:latest
+    container_name: openwa
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "2785:2785"   # API + bundled dashboard
+    volumes:
+      - openwa-data:/app/data
+    environment:
+      # Webhook is configured via the OpenWA dashboard after ngrok prints
+      # its public URL — OpenWA's internal env doesn't reliably forward
+      # to ngrok because the URL is dynamic. See README.
+      - ENGINE_TYPE=whatsapp-web.js
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2785/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  langgraph-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph-app
+    restart: unless-stopped
+    env_file: .env
+    # Not exposed on the host — only ngrok and OpenWA reach it (intra-network).
+    expose:
+      - "8000"
+    depends_on:
+      openwa:
+        condition: service_healthy
+
+  ngrok:
+    image: ngrok/ngrok:3
+    container_name: ngrok
+    restart: unless-stopped
+    env_file: .env
+    # ngrok v3: `http <upstream>` forwards traffic. The public URL is
+    # random unless you set --domain (paid plan). For class we accept
+    # the random URL and read it from the inspector at :4040.
+    command: ["http", "langgraph-app:8000"]
+    ports:
+      - "4040:4040"   # ngrok's web inspector
+    depends_on:
+      - langgraph-app
+
+volumes:
+  openwa-data:
+    # Persistent across `docker compose down` so the WhatsApp session survives.
