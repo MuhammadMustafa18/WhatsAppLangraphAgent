@@ -1,38 +1,42 @@
-"""The echo graph — iteration 1 of the course.
+"""The reply graph — iteration 2 of the course.
 
-Read this file top-to-bottom in 90 seconds:
+Same shape as iter 1: `START -> node -> END`. Only the node body changed.
+`echo` did `state['message'].upper()`. `reply` calls an LLM.
 
-  1. Define a `State` (lives in state.py).
-  2. Write a node function: takes state in, returns a partial state out.
-  3. Wire it into a `StateGraph`, compile, done.
-
-Next iteration we will:
-  - Add a second node that classifies intent.
-  - Add a conditional edge between them.
-The only thing that changes is this file. State shape is already ready
-for it (see state.py — no changes there either).
+That's the point of LangGraph — the wiring stays the same as the
+thinking evolves. Future iterations add more nodes / edges; the call
+site in main.py doesn't change.
 """
 
 from langgraph.graph import END, START, StateGraph
 
+from app.llm import chat
 from app.state import State
 
+SYSTEM_PROMPT = (
+    "You are a helpful WhatsApp assistant. "
+    "Reply concisely (1–3 sentences). "
+    "Mirror the user's language. "
+    "If the user writes in English, reply in English. "
+    "If they write in Urdu/Hindi, reply in the same script."
+)
 
-def echo(state: State) -> dict:
-    """The only node. Takes the message, uppercases it, stores reply.
 
-    A node returns a *partial* state dict. LangGraph merges it into the
-    full state. We don't return `message` because we're not changing it.
+def generate(state: State) -> dict:
+    """The only node. Asks the LLM to produce a reply for `state['message']`.
+
+    Note the node name (`generate`) and the state field it writes to
+    (`reply`) must be different — LangGraph shares one namespace
+    between node names and state keys.
     """
-    return {"reply": state["message"].upper()}
+    text = chat(SYSTEM_PROMPT, state["message"])
+    return {"reply": text}
 
 
-# Build the graph: START -> echo -> END. That's it.
 _builder = StateGraph(State)
-_builder.add_node("echo", echo)
-_builder.add_edge(START, "echo")
-_builder.add_edge("echo", END)
+_builder.add_node("generate", generate)
+_builder.add_edge(START, "generate")
+_builder.add_edge("generate", END)
 
-# `app` is what main.py imports. Keep this name stable — every iteration
-# of the course exports a `graph` with the same shape.
+# `graph` is what main.py imports. Keep this name stable.
 graph = _builder.compile()

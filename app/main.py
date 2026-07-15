@@ -12,6 +12,7 @@ stay mechanical — all the interesting logic lives in `graph.py`.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -88,11 +89,6 @@ def _verify_signature(raw_body: bytes, signature_header: str | None) -> bool:
     return hmac.compare_digest(expected, provided)
 
 
-# Chat-ID suffixes OpenWA's whatsapp-web.js engine can't reply to.
-# We log a single-line warning and skip rather than 500-ing the webhook.
-_UNREPLYABLE_SUFFIXES = ("@newsletter", "@broadcast", "@lid")
-
-
 @app.post("/webhook")
 async def webhook(request: Request) -> dict[str, str]:
     """Receive a single OpenWA event.
@@ -133,40 +129,46 @@ async def webhook(request: Request) -> dict[str, str]:
     if not body or not chat_id:
         raise HTTPException(status_code=400, detail="missing body or from")
 
-    # Some chat-id formats (newer WhatsApp uses @lid for privacy, plus
-    # newsletters/broadcasts) can't be replied to via OpenWA's
-    # whatsapp-web.js engine. Skip early so the webhook returns 200
-    # cleanly instead of 500-ing.
-    if chat_id.endswith(_UNREPLYABLE_SUFFIXES):
-        log.warning("Skipping unreplyable chat_id=%s (engine limitation)", chat_id)
+    # Newsletters and broadcasts can't be replied to (OpenWA returns 400).
+    # @lid is newer WhatsApp privacy IDs — OpenWA *may* 500 on these, but
+    # we attempt the send anyway and let _handle() catch the error gracefully.
+    if chat_id.endswith(("@newsletter", "@broadcast")):
+        log.warning("Skipping unreplyable chat_id=%s", chat_id)
         return {"status": "skipped-unreplyable-chat"}
 
-    # Run the graph. State comes back with `reply` populated.
-    result = await graph.ainvoke({"message": body, "reply": ""})
-    reply = (result.get("reply") or "").strip()
-    if not reply:
-        return {"status": "no-reply"}
+    # ACK fast — OpenWA's webhook timeout is ~10s, and an LLM call can
+    # take 2–5s. If we block here, we'd risk hitting the timeout under
+    # load and OpenWA would retry, doubling our work. Instead, hand off
+    # to a background task and return immediately.
+    asyncio.create_task(_handle(chat_id, body))
+    return {"status": "queued"}
 
-    # Ship it back via OpenWA. If the send fails (LID not yet seen in the
-    # chat table, transient engine error, etc.) we log and return success
-    # anyway so OpenWA doesn't retry — the graph already ran, and the
-    # reply text is what matters.
-    log.info("chat=%s in=%r out=%r", chat_id, body, reply)
+
+async def _handle(chat_id: str, body: str) -> None:
+    """Background task: run the graph, send the reply. Errors are logged
+    but never raised — the webhook already returned 200, so we just
+    surface failures to the log for debugging."""
     try:
-        await _client.send_text(chat_id=chat_id, text=reply)
-    except httpx.HTTPStatusError as exc:
-        body_text = ""
-        try:
-            body_text = exc.response.text[:200]
-        except Exception:
-            pass
-        log.warning(
-            "OpenWA send-text failed (chat_id=%s, status=%d): %s",
-            chat_id, exc.response.status_code, body_text,
-        )
-        return {"status": "send-failed"}
-    except httpx.HTTPError:
-        log.exception("OpenWA send-text failed for chat_id=%s", chat_id)
-        return {"status": "send-failed"}
+        result = await graph.ainvoke({"message": body, "reply": ""})
+        reply = (result.get("reply") or "").strip()
+        if not reply:
+            log.warning("graph returned empty reply for chat=%s body=%r", chat_id, body[:80])
+            return
 
-    return {"status": "sent"}
+        log.info("chat=%s in=%r out=%r", chat_id, body, reply)
+        try:
+            await _client.send_text(chat_id=chat_id, text=reply)
+        except httpx.HTTPStatusError as exc:
+            body_text = ""
+            try:
+                body_text = exc.response.text[:200]
+            except Exception:
+                pass
+            log.warning(
+                "OpenWA send-text failed (chat_id=%s, status=%d): %s",
+                chat_id, exc.response.status_code, body_text,
+            )
+        except httpx.HTTPError:
+            log.exception("OpenWA send-text failed for chat_id=%s", chat_id)
+    except Exception:
+        log.exception("Background handler crashed for chat_id=%s", chat_id)

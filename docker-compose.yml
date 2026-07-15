@@ -35,7 +35,10 @@ services:
       # Webhook is configured via the OpenWA dashboard after ngrok prints
       # its public URL — OpenWA's internal env doesn't reliably forward
       # to ngrok because the URL is dynamic. See README.
-      - ENGINE_TYPE=whatsapp-web.js
+      # Switch to `baileys` for @lid support (newer WhatsApp privacy IDs).
+      # Note: switching engines requires re-scanning the QR — session data
+      # does not transfer between engines.
+      - ENGINE_TYPE=baileys
       - LOG_LEVEL=info
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:2785/api/health"]

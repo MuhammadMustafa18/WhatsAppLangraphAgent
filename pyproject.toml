@@ -1,7 +1,7 @@
 [project]
 name = "whatsapp-bot-langgraph"
 version = "0.1.0"
-description = "LangGraph course — iteration 1: echo bot backed by OpenWA"
+description = "LangGraph course — iteration 2: LLM reply backed by OpenWA"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.115.5",
@@ -11,6 +11,7 @@ dependencies = [
     "langchain-core==0.3.21",
     "pydantic==2.10.2",
     "python-dotenv==1.0.1",
+    "openai>=1.50.0",
 ]
 
 [build-system]

@@ -13,4 +13,7 @@ COPY app ./app
 EXPOSE 8000
 
 # --reload is useful in class so students see changes without rebuilding.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# --reload-exclude ".venv/*" prevents WatchFiles from tracking every
+# file in site-packages (openai/, langgraph/, fastapi/, etc.) which
+# otherwise causes constant reload churn on Windows.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-exclude", ".venv/*"]
