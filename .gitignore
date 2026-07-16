@@ -29,6 +29,10 @@ Thumbs.db
 # Local planning notes (not part of the project)
 plan.md
 
+# LangGraph SQLite checkpoints (conversation memory, iter 5+)
+data/checkpoints.sqlite
+data/checkpoints.sqlite-*
+
 # Docker
 .docker/
 

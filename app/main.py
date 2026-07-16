@@ -26,7 +26,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 import httpx
 
-from app.graph import graph
+from app.graph import build_graph
 from app.openwa_client import OpenWAClient
 
 # Load .env from the repo root when running natively (uvicorn app.main:app).
@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
         log.info("Webhook HMAC verification: ON")
     else:
         log.warning("Webhook HMAC verification: OFF (no OPENWA_WEBHOOK_SECRET)")
+    # Build the graph on this event loop so its AsyncSqliteSaver
+    # background thread lives on the same loop that runs ainvoke().
+    app.state.graph = await build_graph()
+    log.info("LangGraph compiled (async checkpointer ready)")
     yield
     await _client.aclose()
 
@@ -74,6 +78,16 @@ app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
 async def health() -> dict[str, str]:
     """Cheap endpoint so we can curl from inside the compose network."""
     return {"status": "ok"}
+
+
+@app.post("/debug-webhook")
+async def debug_webhook(request: Request) -> dict[str, str]:
+    """Temporary endpoint to see what headers OpenWA is sending."""
+    headers = dict(request.headers)
+    body = await request.body()
+    log.info("DEBUG WEBHOOK - Headers: %s", headers)
+    log.info("DEBUG WEBHOOK - Body: %s", body[:500])  # First 500 chars
+    return {"status": "debug", "headers": str(headers)}
 
 
 def _verify_signature(raw_body: bytes, signature_header: str | None) -> bool:
@@ -112,7 +126,13 @@ async def webhook(request: Request) -> dict[str, str]:
         # when we *do* have a secret configured.
         raise HTTPException(status_code=401, detail="bad signature")
 
-    event: dict[str, Any] = await request.json()
+    try:
+        event: dict[str, Any] = await request.json()
+    except Exception:
+        # Probe / malformed body — return 200 so OpenWA doesn't retry,
+        # but log loudly so we can see what came through.
+        log.warning("non-JSON body on /webhook: %r", raw[:200])
+        return {"status": "ignored-not-json"}
 
     if event.get("event") != "message.received":
         # Acknowledge but do nothing — OpenWA expects 2xx on every event.
@@ -175,16 +195,21 @@ async def webhook(request: Request) -> dict[str, str]:
     initial_state = {"message": body, "reply": "", "provider": provider}
     if persona:
         initial_state["persona"] = persona
-    asyncio.create_task(_handle(chat_id, initial_state))
+    asyncio.create_task(_handle(request.app, chat_id, initial_state))
     return {"status": "queued"}
 
 
-async def _handle(chat_id: str, initial_state: dict) -> None:
+async def _handle(app, chat_id: str, initial_state: dict) -> None:
     """Background task: run the graph, send the reply. Errors are logged
     but never raised — the webhook already returned 200, so we just
     surface failures to the log for debugging."""
     try:
-        result = await graph.ainvoke(initial_state)
+        # thread_id=chat_id is the key that ties invocations together.
+        # The checkpointer uses it to load prior state and persist this
+        # turn's state, so the next message from the same chat sees the
+        # full conversation history.
+        config = {"configurable": {"thread_id": chat_id}}
+        result = await app.state.graph.ainvoke(initial_state, config=config)
         reply = (result.get("reply") or "").strip()
         if not reply:
             log.warning("graph returned empty reply for chat=%s", chat_id)
