@@ -103,6 +103,10 @@ def _verify_signature(raw_body: bytes, signature_header: str | None) -> bool:
     return hmac.compare_digest(expected, provided)
 
 
+# Chat-ID suffixes OpenWA's whatsapp-web.js engine can't reply to.
+# We log a single-line warning and skip rather than 500-ing the webhook.
+_UNREPLYABLE_SUFFIXES = ("@newsletter", "@broadcast")
+
 @app.post("/webhook")
 async def webhook(request: Request) -> dict[str, str]:
     """Receive a single OpenWA event.
@@ -165,6 +169,12 @@ async def webhook(request: Request) -> dict[str, str]:
     persona: str | None = None
     text = body.lower().lstrip()
 
+    # /clear wipes the SQLite checkpoint history for this chat. Runs
+    # before provider/persona parsing so it short-circuits the rest.
+    if text.startswith("/clear"):
+        await _clear_thread(request.app, chat_id)
+        return {"status": "cleared"}
+
     # Parse provider prefix first (only one).
     for prefix, name in (("/claude", "claude"), ("/gpt", "gpt")):
         if text.startswith(prefix):
@@ -174,7 +184,7 @@ async def webhook(request: Request) -> dict[str, str]:
             break
 
     # Then parse persona prefix (only one).
-    for prefix, name in (("/resume", "resume"), ("/services", "services"), ("/personal", "personal")):
+    for prefix, name in (("/resume", "resume"), ("/services", "services"), ("/personal", "personal"), ("/booking", "booking")):
         if text.startswith(prefix):
             persona = name
             text = text[len(prefix):].lstrip()
@@ -192,11 +202,43 @@ async def webhook(request: Request) -> dict[str, str]:
     # take 2–5s. If we block here, we'd risk hitting the timeout under
     # load and OpenWA would retry, doubling our work. Instead, hand off
     # to a background task and return immediately.
-    initial_state = {"message": body, "reply": "", "provider": provider}
-    if persona:
-        initial_state["persona"] = persona
+    initial_state = {"message": body, "reply": "", "provider": provider, "persona": persona}
     asyncio.create_task(_handle(request.app, chat_id, initial_state))
     return {"status": "queued"}
+
+
+async def _clear_thread(app, chat_id: str) -> None:
+    """Wipe the SQLite history for this chat and reply with a confirmation.
+
+    Triggered by the `/clear` slash prefix. Calls the AsyncSqliteSaver's
+    delete_thread() (a sync method) inside asyncio.to_thread so the event
+    loop isn't blocked, then sends a confirmation via OpenWA.
+
+    Errors are logged but never raised — the webhook has already returned
+    200 by the time we get here.
+    """
+    saver = app.state.graph._saver  # stashed by build_graph()
+    try:
+        await asyncio.to_thread(saver.delete_thread, chat_id)
+        log.info("cleared checkpoint history for chat=%s", chat_id)
+    except Exception:
+        log.exception("failed to clear history for chat=%s", chat_id)
+        try:
+            await _client.send_text(
+                chat_id=chat_id,
+                text="Sorry, I couldn't clear the history. Try again or restart the bot.",
+            )
+        except Exception:
+            log.exception("send_text after clear failure also failed for chat=%s", chat_id)
+        return
+
+    try:
+        await _client.send_text(
+            chat_id=chat_id,
+            text="Cleared conversation history for this chat.",
+        )
+    except Exception:
+        log.exception("send_text confirmation failed for chat=%s", chat_id)
 
 
 async def _handle(app, chat_id: str, initial_state: dict) -> None:

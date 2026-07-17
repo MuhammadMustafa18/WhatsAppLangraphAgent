@@ -104,8 +104,26 @@ Available personas:
           questions.
 - services: questions about what Muhammad Mustafa offers, pricing,
             engagements, what he's willing to take on.
+- booking: the user wants to meet, talk to, or get on a call with
+            Muhammad Mustafa — either by asking to schedule/arrange a
+            meeting, OR by asking about his availability for one. Treat
+            any of these as booking, even if phrased as a question.
 - personal: casual chat, weekend plans, opinions, "how are you",
             small talk, getting-to-know-you questions.
+
+Positive examples:
+- "is mustafa available at 9pm today?" → booking
+- "can we meet tomorrow?" → booking
+- "schedule a 30-min call" → booking
+- "what's your rate for a LangGraph engagement?" → services
+- "do you build WhatsApp bots?" → services
+- "how do I hire you for a project?" → services
+- "tell me about your background" → resume
+- "what projects have you shipped?" → resume
+- "what's your GPA?" → resume
+- "yo" → personal
+- "hey wassup" → personal
+- "what's the weather like?" → personal
 
 If unsure, reply: personal
 
@@ -115,3 +133,14 @@ Reply with one word only."""
 
 
 DEFAULT_PERSONA = "personal"
+
+
+# Fixed reply the graph sends when the classifier labels a message as a
+# booking request. Phase 1 only — no LLM call, no calendar lookup. The
+# stub preserves message-history symmetry with `generate`: both nodes
+# append the user message + assistant reply to `state["messages"]`, so
+# the checkpointer treats them identically.
+BOOKING_STUB_REPLY = (
+    "Okay — this looks like a booking request. "
+    "I'll check my calendar and get back to you shortly."
+)

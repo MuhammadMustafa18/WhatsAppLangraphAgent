@@ -31,7 +31,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.anthropic_client import chat as claude_chat
 from app.llm import chat as free_chat, _get_client as free_client
-from app.personas import CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
+from app.personas import BOOKING_STUB_REPLY, CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
 from app.state import Persona, State
 
 log = logging.getLogger("app.graph")
@@ -52,9 +52,12 @@ _CHECKPOINT_DB = os.environ.get("CHECKPOINT_DB", "data/checkpoints.sqlite")
 def classify(state: State) -> dict:
     """Pick a persona for the message.
 
-    - If main.py already set one (via /resume, /services, /personal),
-      just pass through.
-    - Otherwise, ask the LLM to pick from {resume, services, personal}.
+    - If main.py already set one (via /resume, /services, /personal,
+      /booking), just pass through.
+    - Otherwise, ask the LLM to pick from
+      {resume, services, personal, booking}.
+      Uses Claude if state['provider'] == 'claude' (set when the user
+      sent `/claude …`). FreeLLMAPI router otherwise.
     - Default to 'personal' if the LLM returns something unexpected.
     """
     existing = state.get("persona")
@@ -62,19 +65,44 @@ def classify(state: State) -> dict:
         log.info("persona already set by slash prefix: %s", existing)
         return {}
 
-    raw = free_chat(
-        "You are a routing assistant.",
-        CLASSIFY_PROMPT.format(message=state["message"]),
-        model=_CLASSIFY_MODEL,
-    ).strip().lower()
+    prompt = CLASSIFY_PROMPT.format(message=state["message"])
+    if state.get("provider") == "claude":
+        # Claude is materially better at nuanced intent classification
+        # than the FreeLLMAPI router, so /claude users get Claude-classify.
+        raw = claude_chat(
+            "You are a routing assistant.",
+            prompt,
+        ).strip().lower()
+    else:
+        raw = free_chat(
+            "You are a routing assistant.",
+            prompt,
+            model=_CLASSIFY_MODEL,
+        ).strip().lower()
 
-    if raw in ("resume", "services", "personal"):
+    if raw in ("resume", "services", "personal", "booking"):
         log.info("classify picked persona=%s", raw)
         return {"persona": raw}
 
     # Model returned something we don't recognize — default.
     log.warning("classify got %r, defaulting to %s", raw, DEFAULT_PERSONA)
     return {"persona": DEFAULT_PERSONA}
+
+
+def booking_stub(state: State) -> dict:
+    """Phase 1 stub for booking requests — no LLM call, no calendar lookup.
+
+    Appends the stub reply to `messages` exactly like `generate` does so
+    the checkpointer treats both paths identically. Phase 2+ will replace
+    this with a real calendar lookup + owner-approval gate.
+    """
+    user_msg = state["message"]
+    history: list[dict] = state.get("messages", []) or []
+    new_history = history + [
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": BOOKING_STUB_REPLY},
+    ]
+    return {"reply": BOOKING_STUB_REPLY, "messages": new_history}
 
 
 def generate(state: State) -> dict:
@@ -148,22 +176,44 @@ def _claude_multi_turn(system: str, history: list[dict], user_msg: str) -> str:
     return "\n".join(parts).strip() or "(empty response)"
 
 
-# Build the graph. Same wiring as iter-4.
+# Build the graph. Same wiring as iter-4, plus a stub branch for
+# booking requests (Phase 1 of the HITL flow — see booking_stub).
 _builder = StateGraph(State)
 _builder.add_node("classify", classify)
 _builder.add_node("generate", generate)
+_builder.add_node("booking_stub", booking_stub)
 
 
-def _route_from_start(state: State) -> str:
-    return "generate" if state.get("persona") else "classify"
+def _resolve_destination(state: State) -> str:
+    """Pick the next node from the persona set by classify (or by a slash
+    prefix in the input). Used only for the post-classify routing now —
+    START goes unconditionally to classify so every message is freshly
+    classified instead of inheriting the prior turn's persona.
+    """
+    persona = state.get("persona")
+    if persona:
+        return "booking_stub" if persona == "booking" else "generate"
+    return "classify"
 
 
-_builder.add_conditional_edges(START, _route_from_start, {
-    "classify": "classify",
+def _route_after_classify(state: State) -> str:
+    # classify always sets persona before returning (it defaults to
+    # DEFAULT_PERSONA on garbage), so the persona branch always wins.
+    return _resolve_destination(state)
+
+
+# Every message re-classifies. classify() short-circuits if main.py set
+# persona via a slash prefix, so /booking /resume etc. still skip the
+# LLM call. Without this unconditional edge, a stale persona persisted
+# from a prior turn would route around classify and amplify any earlier
+# misclassification forever (see Phase 1.7 plan).
+_builder.add_edge(START, "classify")
+_builder.add_conditional_edges("classify", _route_after_classify, {
     "generate": "generate",
+    "booking_stub": "booking_stub",
 })
-_builder.add_edge("classify", "generate")
 _builder.add_edge("generate", END)
+_builder.add_edge("booking_stub", END)
 
 
 # Compile with AsyncSqliteSaver inside uvicorn's lifespan — the
@@ -195,4 +245,7 @@ async def build_graph():
     # Hold the context manager alive so __aexit__ never runs while
     # the graph is in use.
     compiled._saver_cm = saver_cm  # type: ignore[attr-defined]
+    # Expose the saver itself so main.py can call delete_thread() for
+    # the /clear slash prefix without going through the compiled graph.
+    compiled._saver = saver  # type: ignore[attr-defined]
     return compiled

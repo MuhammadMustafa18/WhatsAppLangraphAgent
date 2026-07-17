@@ -8,7 +8,7 @@ from typing import Any, TypedDict, Literal
 
 
 # Allowed persona values. Add new personas here and in app/personas.py.
-Persona = Literal["resume", "services", "personal"]
+Persona = Literal["resume", "services", "personal", "booking"]
 
 
 # A single message in the conversation. We use plain dicts (not
