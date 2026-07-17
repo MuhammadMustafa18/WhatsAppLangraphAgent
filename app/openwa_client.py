@@ -11,9 +11,10 @@ Keep this file boring. If it grows past ~50 lines, that's a smell.
 from __future__ import annotations
 
 import logging
-import os
 
 import httpx
+
+from app.core.config import get_settings
 
 log = logging.getLogger("app.openwa")
 
@@ -25,13 +26,14 @@ class OpenWAClient:
         api_key: str | None = None,
         session_id: str | None = None,
     ) -> None:
-        self.base_url = (base_url or os.environ["OPENWA_API_URL"]).rstrip("/")
-        self.api_key = api_key or os.environ["OPENWA_API_KEY"]
+        settings = get_settings()
+        self.base_url = (base_url or settings.OPENWA_API_URL).rstrip("/")
+        self.api_key = api_key or settings.OPENWA_API_KEY
         # We accept either a session NAME (e.g. "langgraph-bot") or a UUID.
         # If a name is given, we resolve it to its UUID on startup because
         # OpenWA's REST endpoints expect the UUID in the URL path. This was
         # the source of mysterious 400/500 errors in iteration 1.
-        requested = session_id or os.environ["OPENWA_SESSION_ID"]
+        requested = session_id or settings.OPENWA_SESSION_ID
         self.session_id = self._resolve_session_id(requested)
 
         # One client, reused — OpenWA sessions are long-lived.

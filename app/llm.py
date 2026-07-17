@@ -11,22 +11,22 @@ can't read OPENAI_API_KEY at import time without coupling import order.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
 from openai import OpenAI
+
+from app.core.config import get_settings
 
 
 @lru_cache(maxsize=1)
 def _get_client() -> OpenAI:
     """Build the OpenAI client on first use, when .env has been loaded."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    base_url = os.environ.get("OPENAI_BASE_URL", "http://127.0.0.1:31415/v1")
-    if not api_key:
+    settings = get_settings()
+    if not settings.OPENAI_API_KEY:
         raise RuntimeError(
             "OPENAI_API_KEY is unset. Add it to .env (and restart uvicorn)."
         )
-    return OpenAI(base_url=base_url, api_key=api_key)
+    return OpenAI(base_url=settings.OPENAI_BASE_URL, api_key=settings.OPENAI_API_KEY)
 
 
 def chat(system: str, user: str, model: str | None = None) -> str:
@@ -35,7 +35,8 @@ def chat(system: str, user: str, model: str | None = None) -> str:
     `model=None` lets FreeLLMAPI's router pick (OPENAI_MODEL=auto).
     Pass a specific model name (e.g. "gpt-oss-120b") to skip routing.
     """
-    chosen = model or os.environ.get("OPENAI_MODEL", "auto")
+    settings = get_settings()
+    chosen = model or settings.OPENAI_MODEL
     resp = _get_client().chat.completions.create(
         model=chosen,
         messages=[

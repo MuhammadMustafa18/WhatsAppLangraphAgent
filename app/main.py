@@ -16,9 +16,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -26,15 +24,19 @@ from fastapi import FastAPI, HTTPException, Request
 
 import httpx
 
+from app.core.config import get_settings
 from app.graph import build_graph
 from app.openwa_client import OpenWAClient
 
 # Load .env from the repo root when running natively (uvicorn app.main:app).
 # Docker compose uses `env_file: .env`, so this is a no-op there.
+from pathlib import Path
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+settings = get_settings()
+
 log = logging.getLogger("app")
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
+logging.basicConfig(level=settings.LOG_LEVEL,
                     format="%(asctime)s %(levelname)s %(message)s")
 
 # Module-level client; lifespan manages its lifecycle.
@@ -43,13 +45,13 @@ _client: OpenWAClient | None = None
 # HMAC secret OpenWA uses to sign outbound webhook payloads. If you don't
 # want signature verification (e.g. running locally without a secret set),
 # leave this unset and the verification step is skipped.
-_WEBHOOK_SECRET = os.environ.get("OPENWA_WEBHOOK_SECRET", "").strip()
+_WEBHOOK_SECRET = settings.OPENWA_WEBHOOK_SECRET.strip()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _client
-    api_key = os.environ.get("OPENWA_API_KEY", "")
+    api_key = settings.OPENWA_API_KEY
     if not api_key or api_key.startswith("replace-me"):
         # Fail loudly at boot rather than failing on first inbound POST.
         raise RuntimeError(

@@ -24,17 +24,19 @@ State shape (in app/state.py):
 """
 
 import logging
-import os
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from app.anthropic_client import chat as claude_chat
+from app.core.config import get_settings
 from app.llm import chat as free_chat, _get_client as free_client
 from app.personas import BOOKING_STUB_REPLY, CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
 from app.state import Persona, State
 
 log = logging.getLogger("app.graph")
+
+settings = get_settings()
 
 # Model pinned by /gpt — FreeLLMAPI exposes this free OpenAI-style
 # endpoint. Swap to whatever you have enabled locally.
@@ -46,7 +48,7 @@ _CLASSIFY_MODEL = "auto"
 
 # Where the SQLite checkpointer stores conversation state. One DB for
 # the whole app — thread_id inside the DB separates conversations.
-_CHECKPOINT_DB = os.environ.get("CHECKPOINT_DB", "data/checkpoints.sqlite")
+_CHECKPOINT_DB = settings.CHECKPOINT_DB
 
 
 def classify(state: State) -> dict:
@@ -164,7 +166,7 @@ def _claude_multi_turn(system: str, history: list[dict], user_msg: str) -> str:
 
     from app.anthropic_client import _get_client as claude_client
     resp = claude_client().messages.create(
-        model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+        model=settings.ANTHROPIC_MODEL,
         max_tokens=1024,
         system=system,
         messages=msgs,

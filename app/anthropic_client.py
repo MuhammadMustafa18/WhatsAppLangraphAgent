@@ -10,33 +10,33 @@ this module at app boot doesn't read env vars before load_dotenv runs.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
 from anthropic import Anthropic
+
+from app.core.config import get_settings
 
 
 @lru_cache(maxsize=1)
 def _get_client() -> Anthropic:
     """Build the Anthropic client on first use, when .env has been loaded."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
-    if not api_key:
+    settings = get_settings()
+    if not settings.ANTHROPIC_API_KEY:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is unset. Add it to .env (and restart uvicorn)."
         )
-    if not base_url:
+    if not settings.ANTHROPIC_BASE_URL:
         raise RuntimeError(
             "ANTHROPIC_BASE_URL is unset. Add it to .env (and restart uvicorn)."
         )
-    return Anthropic(base_url=base_url, api_key=api_key)
+    return Anthropic(base_url=settings.ANTHROPIC_BASE_URL, api_key=settings.ANTHROPIC_API_KEY)
 
 
 def chat(system: str, user: str) -> str:
     """Single-turn Anthropic Messages call. Returns the model's reply text."""
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    settings = get_settings()
     resp = _get_client().messages.create(
-        model=model,
+        model=settings.ANTHROPIC_MODEL,
         max_tokens=1024,
         system=system,
         messages=[{"role": "user", "content": user}],
