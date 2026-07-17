@@ -17,6 +17,7 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=2.0.0",
     "aiosqlite>=0.20.0",
     "sqlalchemy[asyncio]>=2.0.0",
+    "alembic>=1.14.0",
 ]
 
 [build-system]
