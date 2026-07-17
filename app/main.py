@@ -52,6 +52,14 @@ _WEBHOOK_SECRET = settings.OPENWA_WEBHOOK_SECRET.strip()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _client
+
+    # Auto-run pending migrations on startup
+    from alembic.config import Config as AlembicConfig
+    from alembic import command as alembic_command
+    alembic_cfg = AlembicConfig("alembic.ini")
+    alembic_command.upgrade(alembic_cfg, "head")
+    log.info("Database migrations applied (alembic upgrade head)")
+
     api_key = settings.OPENWA_API_KEY
     if not api_key or api_key.startswith("replace-me"):
         # Fail loudly at boot rather than failing on first inbound POST.
@@ -75,6 +83,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
+
+# --- API Routers ---
+from app.api.auth import router as auth_router
+app.include_router(auth_router)
 
 
 @app.get("/health")
