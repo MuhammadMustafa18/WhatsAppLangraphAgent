@@ -20,11 +20,12 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 
 import httpx
 
 from app.core.config import get_settings
+from app.core.deps import get_db
 from app.graph import build_graph
 from app.openwa_client import OpenWAClient
 
@@ -80,6 +81,14 @@ app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
 async def health() -> dict[str, str]:
     """Cheap endpoint so we can curl from inside the compose network."""
     return {"status": "ok"}
+
+
+@app.get("/db-test")
+async def db_test(db=Depends(get_db)):
+    """Verify the async DB connection works."""
+    from sqlalchemy import text
+    result = await db.execute(text("SELECT 1"))
+    return {"db": "ok", "result": result.scalar()}
 
 
 @app.post("/debug-webhook")
