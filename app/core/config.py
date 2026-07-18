@@ -6,6 +6,7 @@ Usage:
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,7 +16,11 @@ class Settings(BaseSettings):
     the app won't start if they're missing from .env or environment."""
 
     # --- App (desktop mode) ---
-    APP_DATA_DIR: str = "./data"  # Override to %APPDATA%\com.whatsapp-bot.app in desktop
+    # %APPDATA% on Windows, ~/.local/share on Linux, ~/Library/Application
+    # Support on macOS. Per-user, per-app data lives here. The Tauri sidecar
+    # also sets this env var so the FastAPI process opens the same DB.
+    # Override APP_DATA_DIR in .env only for non-desktop runs (tests, CI).
+    APP_DATA_DIR: str = ""
     API_PORT: int = 18234
     API_HOST: str = "127.0.0.1"
 
@@ -67,3 +72,28 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Singleton Settings instance. Cached so .env is read once at boot."""
     return Settings()
+
+
+def default_app_data_dir() -> Path:
+    """Per-user, per-app data directory, OS-aware.
+
+    Includes a 'data/' subdirectory because DATABASE_URL points at
+    `app.sqlite` (no path prefix). Tests / CLI / sidecar all share
+    this directory so they see the same SQLite file.
+
+    Windows: %APPDATA%\\com.whatsapp-bot.app\\data
+    macOS:   ~/Library/Application Support/com.whatsapp-bot.app/data
+    Linux:   $XDG_DATA_HOME/com.whatsapp-bot.app/data or
+             ~/.local/share/com.whatsapp-bot.app/data
+    """
+    import os
+    import sys
+
+    app_name = "com.whatsapp-bot.app"
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / app_name / "data"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / app_name / "data"
+    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / app_name / "data"

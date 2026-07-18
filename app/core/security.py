@@ -2,11 +2,14 @@
 
 Phase 6: password hashing.
 Phase 7: JWT tokens.
-Phase 35: Fernet encryption will be added here.
+Phase 12: Fernet encryption for at-rest secrets (Provider.api_key, etc.).
 """
 
+import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+from cryptography.fernet import Fernet, InvalidToken
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -55,3 +58,83 @@ def decode_token(token: str) -> dict | None:
         return jwt.decode(token, settings.JWT_SECRET, algorithms=[ALGORITHM])
     except JWTError:
         return None
+
+
+# --- At-rest encryption (Fernet) ---
+#
+# Used for secrets stored in the database: Provider.api_key, Connection.config
+# secrets, etc. Protects against someone copying data/app.sqlite and reading
+# it offline. Does NOT protect against an attacker running this app — at
+# runtime the key is in memory and the app decrypts everything it reads.
+#
+# Key lifecycle:
+#   - On first encrypt_value() call, if ENCRYPTION_KEY is empty we generate
+#     a fresh Fernet key, persist it to .env, and use it.
+#   - The .env file is what we're using for ALL config; the key lives there
+#     alongside JWT_SECRET. Treat .env as a secret.
+#   - Rotation is intentionally out of scope (single key per deployment).
+
+def _load_or_create_key() -> bytes:
+    """Return the Fernet key, generating + persisting one if absent."""
+    settings = get_settings()
+    if settings.ENCRYPTION_KEY:
+        return settings.ENCRYPTION_KEY.encode()
+
+    new_key = Fernet.generate_key()
+    _persist_key(new_key.decode())
+    # Re-read settings so subsequent calls see the persisted key.
+    get_settings.cache_clear()
+    return new_key
+
+
+def _persist_key(key: str) -> None:
+    """Write ENCRYPTION_KEY=value to the .env file the app was loaded from.
+
+    Updates the file in place if the key already exists, otherwise appends.
+    Bypasses pydantic-settings so we don't need a Settings reload signal.
+    """
+    env_path = Path(".env")
+    line = f"ENCRYPTION_KEY={key}"
+    if env_path.exists():
+        text = env_path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        replaced = False
+        for i, ln in enumerate(lines):
+            if ln.strip().startswith("ENCRYPTION_KEY="):
+                lines[i] = line
+                replaced = True
+                break
+        if not replaced:
+            lines.append(line)
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    else:
+        env_path.write_text(line + "\n", encoding="utf-8")
+    # Match file permissions to typical .env (owner read/write only).
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        # Windows doesn't honor POSIX bits — best-effort only.
+        pass
+
+
+def _fernet() -> Fernet:
+    return Fernet(_load_or_create_key())
+
+
+def encrypt_value(plaintext: str) -> str:
+    """Encrypt a string for storage. Returns a url-safe base64 token."""
+    if plaintext is None:
+        return None  # type: ignore[return-value]
+    return _fernet().encrypt(plaintext.encode("utf-8")).decode("ascii")
+
+
+def decrypt_value(token: str) -> str:
+    """Decrypt a Fernet token back to the original plaintext.
+
+    Raises InvalidToken if the token is malformed, tampered with, or was
+    encrypted with a different key. We don't catch it here — the caller
+    decides whether bad data is a bug or a soft-fail condition.
+    """
+    if token is None:
+        return None  # type: ignore[return-value]
+    return _fernet().decrypt(token.encode("ascii")).decode("utf-8")

@@ -28,12 +28,18 @@ target_metadata = Base.metadata
 # suffix from the URL to avoid MissingGreenlet errors.
 settings = get_settings()
 url = settings.DATABASE_URL.replace("+aiosqlite", "")
-# Resolve relative SQLite paths against APP_DATA_DIR, mirroring engine.py,
-# and ensure the parent directory exists so SQLite can create the file.
+# Resolve relative SQLite paths against APP_DATA_DIR (mirroring engine.py),
+# falling back to the OS-conventional default so CLI alembic runs and the
+# Tauri sidecar uvicorn process share one DB.
 if url.startswith("sqlite:///"):
     from pathlib import Path
+    from app.core.config import default_app_data_dir
     relative = url.replace("sqlite:///", "", 1)
-    data_dir = Path(settings.APP_DATA_DIR)
+    data_dir = (
+        Path(settings.APP_DATA_DIR)
+        if settings.APP_DATA_DIR
+        else default_app_data_dir()
+    )
     full = (data_dir / relative).resolve()
     full.parent.mkdir(parents=True, exist_ok=True)
     url = f"sqlite:///{full}"

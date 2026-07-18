@@ -57,7 +57,7 @@ class Provider(Base):
     name = Column(String(100), nullable=False)
     type = Column(String(20), nullable=False)  # "openai" | "anthropic" | "custom"
     base_url = Column(String(500), nullable=True)  # for OpenAI-compatible endpoints
-    api_key = Column(String(500), nullable=False)
+    api_key = Column(String(2000), nullable=False)  # Fernet-encrypted at rest (Phase 12)
     model = Column(String(100), nullable=False)
     max_tokens = Column(
         Integer, nullable=False, default=1024, server_default=text("1024")
