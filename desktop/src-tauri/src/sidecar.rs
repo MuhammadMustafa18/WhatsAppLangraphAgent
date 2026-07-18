@@ -234,19 +234,23 @@ pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
     log::info!("setup_sidecar: starting");
     let manager = SidecarManager::new();
 
-    // Get the app data directory
+    // Get the app data directory (the per-user app folder, e.g.
+    // %APPDATA%\com.whatsapp-bot.app on Windows). Inside that we keep
+    // runtime data in a 'data' subdir so the app folder can also hold
+    // future config files, logs, etc. without collision.
     let app_dir = app.path().app_data_dir().map_err(|e| {
         log::error!("setup_sidecar: failed to get app_data_dir: {}", e);
         e.to_string()
     })?;
-    log::info!("setup_sidecar: app_data_dir = {:?}", app_dir);
-    std::fs::create_dir_all(&app_dir).map_err(|e| {
-        log::error!("setup_sidecar: failed to create app_dir: {}", e);
+    let data_dir = app_dir.join("data");
+    log::info!("setup_sidecar: app_data_dir = {:?}, data_dir = {:?}", app_dir, data_dir);
+    std::fs::create_dir_all(&data_dir).map_err(|e| {
+        log::error!("setup_sidecar: failed to create data_dir: {}", e);
         e.to_string()
     })?;
 
     // Start the backend
-    manager.start(&app_dir)?;
+    manager.start(&data_dir)?;
 
     // Store manager in app state for access in other parts of the app
     app.manage(manager);
