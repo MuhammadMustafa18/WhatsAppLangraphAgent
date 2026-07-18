@@ -20,7 +20,10 @@ class Settings(BaseSettings):
     API_HOST: str = "127.0.0.1"
 
     # --- Database ---
-    DATABASE_URL: str = "sqlite+aiosqlite:///data/app.sqlite"  # Relative to APP_DATA_DIR
+    # APP_DATA_DIR is the directory that holds runtime data. DATABASE_URL
+    # points at a file *inside* that directory — not a subdir like
+    # "data/app.sqlite", which would double up with APP_DATA_DIR.
+    DATABASE_URL: str = "sqlite+aiosqlite:///app.sqlite"
 
     # --- JWT (required) ---
     JWT_SECRET: str
