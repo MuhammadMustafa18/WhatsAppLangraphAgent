@@ -14,8 +14,13 @@ class Settings(BaseSettings):
     """All configuration for the app. Required fields have no default —
     the app won't start if they're missing from .env or environment."""
 
+    # --- App (desktop mode) ---
+    APP_DATA_DIR: str = "./data"  # Override to %APPDATA%\com.whatsapp-bot.app in desktop
+    API_PORT: int = 18234
+    API_HOST: str = "127.0.0.1"
+
     # --- Database ---
-    DATABASE_URL: str = "sqlite+aiosqlite:///data/app.sqlite"
+    DATABASE_URL: str = "sqlite+aiosqlite:///data/app.sqlite"  # Relative to APP_DATA_DIR
 
     # --- JWT (required) ---
     JWT_SECRET: str

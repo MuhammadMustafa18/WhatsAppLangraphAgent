@@ -16,18 +16,19 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 import httpx
 
 from app.core.config import get_settings
 from app.core.deps import get_db
-from app.graph import build_graph
-from app.openwa_client import OpenWAClient
 
 # Load .env from the repo root when running natively (uvicorn app.main:app).
 # Docker compose uses `env_file: .env`, so this is a no-op there.
@@ -41,12 +42,15 @@ logging.basicConfig(level=settings.LOG_LEVEL,
                     format="%(asctime)s %(levelname)s %(message)s")
 
 # Module-level client; lifespan manages its lifecycle.
-_client: OpenWAClient | None = None
+_client = None  # OpenWAClient | None
 
 # HMAC secret OpenWA uses to sign outbound webhook payloads. If you don't
 # want signature verification (e.g. running locally without a secret set),
 # leave this unset and the verification step is skipped.
 _WEBHOOK_SECRET = settings.OPENWA_WEBHOOK_SECRET.strip()
+
+# Desktop mode: skip OpenWA if API key not configured
+_desktop_mode = not settings.OPENWA_API_KEY or settings.OPENWA_API_KEY.startswith("replace-me")
 
 
 @asynccontextmanager
@@ -60,29 +64,47 @@ async def lifespan(app: FastAPI):
     alembic_command.upgrade(alembic_cfg, "head")
     log.info("Database migrations applied (alembic upgrade head)")
 
-    api_key = settings.OPENWA_API_KEY
-    if not api_key or api_key.startswith("replace-me"):
-        # Fail loudly at boot rather than failing on first inbound POST.
-        raise RuntimeError(
-            "OPENWA_API_KEY is unset or still a placeholder. "
-            "Create one in the OpenWA dashboard and put it in .env."
-        )
-    _client = OpenWAClient()
-    log.info("OpenWA client ready: %s session=%s",
-             _client.base_url, _client.session_id)
-    if _WEBHOOK_SECRET:
-        log.info("Webhook HMAC verification: ON")
+    if _desktop_mode:
+        log.info("Running in desktop mode (OpenWA not configured)")
+        app.state.graph = None
     else:
-        log.warning("Webhook HMAC verification: OFF (no OPENWA_WEBHOOK_SECRET)")
-    # Build the graph on this event loop so its AsyncSqliteSaver
-    # background thread lives on the same loop that runs ainvoke().
-    app.state.graph = await build_graph()
-    log.info("LangGraph compiled (async checkpointer ready)")
+        from app.openwa_client import OpenWAClient
+        from app.graph import build_graph
+
+        api_key = settings.OPENWA_API_KEY
+        if not api_key or api_key.startswith("replace-me"):
+            raise RuntimeError(
+                "OPENWA_API_KEY is unset or still a placeholder. "
+                "Create one in the OpenWA dashboard and put it in .env."
+            )
+        _client = OpenWAClient()
+        log.info("OpenWA client ready: %s session=%s",
+                 _client.base_url, _client.session_id)
+        if _WEBHOOK_SECRET:
+            log.info("Webhook HMAC verification: ON")
+        else:
+            log.warning("Webhook HMAC verification: OFF (no OPENWA_WEBHOOK_SECRET)")
+        # Build the graph on this event loop so its AsyncSqliteSaver
+        # background thread lives on the same loop that runs ainvoke().
+        app.state.graph = await build_graph()
+        log.info("LangGraph compiled (async checkpointer ready)")
+
     yield
-    await _client.aclose()
+
+    if _client:
+        await _client.aclose()
 
 
 app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
+
+# CORS for Tauri frontend (localhost)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:1420", "http://127.0.0.1:1420"],  # Vite dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- API Routers ---
 from app.api.auth import router as auth_router
@@ -302,3 +324,14 @@ async def _handle(app, chat_id: str, initial_state: dict) -> None:
             log.exception("OpenWA send-text transport error for chat_id=%s", chat_id)
     except Exception:
         log.exception("Background handler crashed for chat_id=%s", chat_id)
+
+
+# --- CLI entry point ---
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.API_HOST,
+        port=settings.API_PORT,
+        reload=True,
+    )

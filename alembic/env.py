@@ -23,9 +23,21 @@ from app.db.models import Base
 
 target_metadata = Base.metadata
 
-# Set sqlalchemy.url from our app settings (not hardcoded in alembic.ini)
+# Set sqlalchemy.url from our app settings (not hardcoded in alembic.ini).
+# Alembic uses a SYNC engine, so we strip the "+aiosqlite" async driver
+# suffix from the URL to avoid MissingGreenlet errors.
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+url = settings.DATABASE_URL.replace("+aiosqlite", "")
+# Resolve relative SQLite paths against APP_DATA_DIR, mirroring engine.py,
+# and ensure the parent directory exists so SQLite can create the file.
+if url.startswith("sqlite:///"):
+    from pathlib import Path
+    relative = url.replace("sqlite:///", "", 1)
+    data_dir = Path(settings.APP_DATA_DIR)
+    full = (data_dir / relative).resolve()
+    full.parent.mkdir(parents=True, exist_ok=True)
+    url = f"sqlite:///{full}"
+config.set_main_option("sqlalchemy.url", url)
 
 
 def run_migrations_offline() -> None:
