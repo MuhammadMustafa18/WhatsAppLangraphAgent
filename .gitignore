@@ -33,8 +33,18 @@ plan.md
 data/checkpoints.sqlite
 data/checkpoints.sqlite-*
 
+# Desktop app user data (per-user, generated at runtime)
+data/app.sqlite
+data/app.sqlite-*
+
 # Docker
 .docker/
+
+# Tauri / desktop build artifacts
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/schemas/
 
 # Test / coverage
 .pytest_cache/
