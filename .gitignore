@@ -46,6 +46,10 @@ desktop/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 
+# Python cache + pyright/baseline noise
+.mypy_cache/
+.ruff_cache/
+
 # Test / coverage
 .pytest_cache/
 .coverage
