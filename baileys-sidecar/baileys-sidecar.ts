@@ -126,7 +126,8 @@ async function startSocket() {
     }
   });
 
-  newSock.ev.on("messages.upsert", async ({ messages }) => {
+  newSock.ev.on("messages.upsert", async ({ messages, type }) => {
+    if (type !== "notify") return;
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
 
