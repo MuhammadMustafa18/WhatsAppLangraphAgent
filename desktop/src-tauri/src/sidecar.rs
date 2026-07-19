@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use reqwest::Client;
 
-const HEALTH_CHECK_URL: &str = "http://127.0.0.1:18234/health";
+use crate::port_check::BACKEND_PORT;
+
+const HEALTH_CHECK_PATH: &str = "/health";
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -100,7 +102,7 @@ impl SidecarManager {
                     "--host".to_string(),
                     "127.0.0.1".to_string(),
                     "--port".to_string(),
-                    "18234".to_string(),
+                    BACKEND_PORT.to_string(),
                 ],
                 project_root,
             )
@@ -116,12 +118,18 @@ impl SidecarManager {
             }
             (
                 api_exe.to_str().unwrap().to_string(),
-                vec!["--port".to_string(), "18234".to_string()],
+                vec!["--port".to_string(), BACKEND_PORT.to_string()],
                 app_dir.to_path_buf(),
             )
         };
 
-        log::info!("Starting backend: {} {:?} (cwd={:?})", cmd, args, cwd);
+        // Ensure backend port is free before spawning
+        crate::port_check::ensure_port_free(BACKEND_PORT)?;
+
+        log::info!(
+            "Starting backend: command={}, args={:?}, cwd={:?}",
+            cmd, args, cwd
+        );
 
         let mut child = Command::new(&cmd)
             .args(&args)
@@ -132,7 +140,10 @@ impl SidecarManager {
             .spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))?;
 
-        log::info!("Backend started, pid={}", child.id());
+        log::info!(
+            "Backend process started: pid={}, port={}",
+            child.id(), BACKEND_PORT
+        );
 
         // Drain stdout/stderr in background threads so the child never blocks
         // on a full pipe (uvicorn would hang if it can't write logs).
@@ -163,6 +174,7 @@ impl SidecarManager {
 
     /// Wait for the backend to be ready by polling the health endpoint.
     pub async fn wait_for_ready(&self) -> Result<(), String> {
+        let health_url = format!("http://127.0.0.1:{}{}", BACKEND_PORT, HEALTH_CHECK_PATH);
         let client = Client::new();
         let start = Instant::now();
 
@@ -171,7 +183,7 @@ impl SidecarManager {
                 return Err("Backend failed to start within timeout".to_string());
             }
 
-            match client.get(HEALTH_CHECK_URL).timeout(Duration::from_secs(2)).send().await {
+            match client.get(&health_url).timeout(Duration::from_secs(2)).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     log::info!("Backend is ready");
                     return Ok(());
@@ -193,17 +205,25 @@ impl SidecarManager {
         let mut process = self.process.lock().map_err(|e| e.to_string())?;
 
         if let Some(ref mut child) = *process {
-            log::info!("Stopping backend process (pid={})", child.id());
+            log::info!(
+                "Stopping backend: pid={}, port={}",
+                child.id(), BACKEND_PORT
+            );
 
-            // Kill the process (graceful shutdown not supported without process group)
+            // Try graceful shutdown first (Ctrl+C equivalent)
             let _ = child.kill();
 
             // Wait up to 5 seconds for graceful shutdown
             let start = Instant::now();
             while start.elapsed() < Duration::from_secs(5) {
                 match child.try_wait() {
-                    Ok(Some(_)) => {
-                        log::info!("Backend stopped gracefully");
+                    Ok(Some(status)) => {
+            log::info!(
+                "Backend stopped: pid={}, exit_code={}, port={}",
+                child.id(),
+                status.code().unwrap_or(-1),
+                BACKEND_PORT
+            );
                         *process = None;
                         return Ok(());
                     }
@@ -211,7 +231,7 @@ impl SidecarManager {
                         std::thread::sleep(Duration::from_millis(100));
                     }
                     Err(e) => {
-                        log::error!("Error checking process status: {}", e);
+                        log::error!("Error checking backend status: {}", e);
                         break;
                     }
                 }
@@ -219,7 +239,7 @@ impl SidecarManager {
 
             // Force kill if still running
             let _ = child.kill();
-            log::info!("Backend force killed");
+            log::warn!("Backend force killed after timeout: pid={}", child.id());
             *process = None;
         }
 
@@ -239,7 +259,7 @@ impl SidecarManager {
 
 /// Setup the sidecar: start backend, wait for ready, register cleanup on exit.
 pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
-    log::info!("setup_sidecar: starting");
+    log::info!("Setting up backend sidecar");
     let manager = SidecarManager::new();
 
     // Get the app data directory (the per-user app folder, e.g.
@@ -247,13 +267,16 @@ pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
     // runtime data in a 'data' subdir so the app folder can also hold
     // future config files, logs, etc. without collision.
     let app_dir = app.path().app_data_dir().map_err(|e| {
-        log::error!("setup_sidecar: failed to get app_data_dir: {}", e);
+        log::error!("Failed to get app_data_dir: {}", e);
         e.to_string()
     })?;
     let data_dir = app_dir.join("data");
-    log::info!("setup_sidecar: app_data_dir = {:?}, data_dir = {:?}", app_dir, data_dir);
+    log::info!(
+        "Resolved app directories: app_data_dir={:?}, data_dir={:?}",
+        app_dir, data_dir
+    );
     std::fs::create_dir_all(&data_dir).map_err(|e| {
-        log::error!("setup_sidecar: failed to create data_dir: {}", e);
+        log::error!("Failed to create data_dir: {}", e);
         e.to_string()
     })?;
 
