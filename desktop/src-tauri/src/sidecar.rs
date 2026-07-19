@@ -74,24 +74,28 @@ impl SidecarManager {
 
         let mut process = self.process.lock().map_err(|e| e.to_string())?;
 
-        // Determine the Python executable path + working directory.
-        //   dev mode:    run uvicorn from the project root so alembic.ini is
-        //                found and migrations run against the dev SQLite.
+        // Determine the uvicorn executable path + working directory.
+        //   dev mode:    use the venv's uvicorn.exe directly (NOT
+        //                `python.exe -m uvicorn`). Spawning python.exe as
+        //                a launcher creates an immediate grandchild; on
+        //                Windows the launcher's stdout pipe closes when
+        //                it exits, killing Tauri's log forwarding even
+        //                though uvicorn keeps running. Invoking uvicorn.exe
+        //                directly puts only one process in the chain so
+        //                the pipes stay alive for the child's lifetime.
         //   bundled:     run the PyInstaller binary; cwd = app_data_dir.
         let (cmd, args, cwd) = if cfg!(debug_assertions) {
             let project_root = resolve_project_root()?;
-            let python_exe = project_root
+            let uvicorn_exe = project_root
                 .join(".venv")
                 .join(if cfg!(windows) { "Scripts" } else { "bin" })
-                .join(if cfg!(windows) { "python.exe" } else { "python" });
-            if !python_exe.exists() {
-                return Err(format!("Python not found at {:?}", python_exe));
+                .join(if cfg!(windows) { "uvicorn.exe" } else { "uvicorn" });
+            if !uvicorn_exe.exists() {
+                return Err(format!("uvicorn not found at {:?}", uvicorn_exe));
             }
             (
-                python_exe.to_str().unwrap().to_string(),
+                uvicorn_exe.to_str().unwrap().to_string(),
                 vec![
-                    "-m".to_string(),
-                    "uvicorn".to_string(),
                     "app.main:app".to_string(),
                     "--host".to_string(),
                     "127.0.0.1".to_string(),
@@ -128,8 +132,10 @@ impl SidecarManager {
             .spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))?;
 
+        log::info!("Backend started, pid={}", child.id());
+
         // Drain stdout/stderr in background threads so the child never blocks
-        // on a full pipe (uvicorn will hang if it can't write logs).
+        // on a full pipe (uvicorn would hang if it can't write logs).
         if let Some(stdout) = child.stdout.take() {
             let _ = std::thread::spawn(move || {
                 use std::io::{BufRead, BufReader};
@@ -137,6 +143,7 @@ impl SidecarManager {
                 for line in reader.lines().map_while(Result::ok) {
                     log::info!("[backend] {}", line);
                 }
+                log::info!("[backend] stdout closed");
             });
         }
         if let Some(stderr) = child.stderr.take() {
@@ -146,6 +153,7 @@ impl SidecarManager {
                 for line in reader.lines().map_while(Result::ok) {
                     log::warn!("[backend] {}", line);
                 }
+                log::info!("[backend] stderr closed");
             });
         }
 
