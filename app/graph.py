@@ -31,19 +31,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.anthropic_client import chat as claude_chat
 from app.core.config import get_settings
+from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow
-from app.llm import chat as free_chat, _get_client as free_client
+from app.llm import chat as free_chat
 from app.personas import BOOKING_STUB_REPLY, CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
+from app.providers import registry as provider_registry
 from app.repositories import persona_repo, provider_repo
 from app.state import Persona, State
 
 log = logging.getLogger("app.graph")
 
 settings = get_settings()
-
-# Model pinned by /gpt — FreeLLMAPI exposes this free OpenAI-style
-# endpoint. Swap to whatever you have enabled locally.
-_GPT_MODEL = "gpt-oss-120b"
 
 # Model used for the auto-classify LLM call. Cheap + fast; we only need
 # a one-word answer.
@@ -210,75 +208,96 @@ def booking_stub(state: State) -> dict:
     return {"reply": BOOKING_STUB_REPLY, "messages": new_history}
 
 
-def generate(state: State) -> dict:
+async def generate(
+    state: State, config: dict | None = None
+) -> dict:
     """Answer the message using the persona's content + conversation history.
 
-    Builds a multi-turn prompt from `state["messages"]`, calls the LLM,
-    and returns the new assistant reply. The reply and the user's input
-    are appended to `state["messages"]` so the checkpointer persists the
-    full conversation.
+    Phase 21c: this node no longer reads from the hardcoded PERSONAS
+    dict or calls the legacy `_free_multi_turn` / `_claude_multi_turn`
+    shims. Instead it:
 
-    Provider values (set by main.py based on the message prefix):
-      - "claude" -> Anthropic Messages API via the configured proxy
-      - "gpt"    -> FreeLLMAPI, pinned to a GPT-style model
-      - "free"   -> FreeLLMAPI router (auto-picks the best available)
+      1. Pulls user_id from config["configurable"]["user_id"].
+      2. Opens its own async DB session (scoped to this node call).
+      3. Calls _resolve_persona + _resolve_provider with the session.
+      4. Builds the multi-turn messages list from the resolved persona.
+      5. Gets a live BaseProvider via provider_registry (cached).
+      6. Calls provider.chat(messages, system=...).
+      7. Appends both turns to state["messages"] so the checkpointer
+         persists the conversation.
+
+    Returns {"reply": text, "messages": new_history}.
+
+    If user_id is missing from config, falls back to the legacy
+    PERSONAS dict + a dummy client so unit tests that don't pass config
+    still work. (Phase 21e makes config mandatory at the call site.)
+    """
+    user_id = (config or {}).get("configurable", {}).get("user_id")
+    if not user_id:
+        # Legacy path: no config means no user context. Use the hardcoded
+        # PERSONAS dict and the legacy FreeLLMAPI client. Kept for unit
+        # tests that call ainvoke without config. Phase 21e removes this
+        # path by making main.py always pass user_id.
+        return await _legacy_generate(state)
+
+    user_msg = state["message"]
+    history: list[dict] = state.get("messages", []) or []
+
+    async with async_session() as db:
+        persona = await _resolve_persona(db, user_id, state)
+        provider_row = await _resolve_provider(db, user_id, state, persona)
+
+    system_prompt = persona.system_prompt
+    if persona.knowledge_base:
+        system_prompt = f"{persona.system_prompt}\n\n{persona.knowledge_base}"
+
+    # Build the message list: prior turns + current user. The system
+    # prompt goes via BaseProvider.chat(system=...) so each SDK can
+    # route it correctly (Anthropic takes it as a separate arg, OpenAI
+    # as a system message — both handled inside the provider).
+    msgs: list[dict] = list(history)
+    msgs.append({"role": "user", "content": user_msg})
+
+    provider = await provider_registry.get_provider(provider_row.id)
+    text = await provider.chat(msgs, system=system_prompt, max_tokens=provider_row.max_tokens)
+
+    new_history = history + [
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": text},
+    ]
+    log.info(
+        "generated reply (persona=%s provider=%s chars=%d)",
+        persona.name, provider_row.name, len(text),
+    )
+    return {"reply": text, "messages": new_history}
+
+
+async def _legacy_generate(state: State) -> dict:
+    """Pre-Phase-21c path. Reads PERSONAS dict, calls FreeLLMAPI directly.
+
+    Kept so unit tests that don't set up a user + DB can still exercise
+    the graph. Phase 21e removes the last caller (main.py webhook).
     """
     persona: Persona = state.get("persona", DEFAULT_PERSONA)
     system_prompt = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])
     user_msg = state["message"]
-    provider = state.get("provider", "free")
     history: list[dict] = state.get("messages", []) or []
 
-    # Build the full message list: system, prior turns, current user.
     msgs = [{"role": "system", "content": system_prompt}]
     msgs.extend(history)
     msgs.append({"role": "user", "content": user_msg})
 
-    if provider == "claude":
-        # Anthropic takes system as a separate arg, not in the messages list.
-        text = _claude_multi_turn(system_prompt, history, user_msg)
-    elif provider == "gpt":
-        text = _free_multi_turn(msgs, model=_GPT_MODEL)
-    else:
-        text = _free_multi_turn(msgs, model="auto")
+    from app.llm import _get_client as free_client
+    resp = free_client().chat.completions.create(
+        model=settings.OPENAI_MODEL, messages=msgs,
+    )
+    text = (resp.choices[0].message.content or "").strip()
 
-    # Append both turns so the next invocation sees them.
     new_history = history + [
         {"role": "user", "content": user_msg},
         {"role": "assistant", "content": text},
     ]
     return {"reply": text, "messages": new_history}
-
-
-def _free_multi_turn(msgs: list[dict], model: str | None) -> str:
-    """OpenAI-style multi-turn call (used for both /free and /gpt)."""
-    resp = free_client().chat.completions.create(model=model or "auto", messages=msgs)
-    return (resp.choices[0].message.content or "").strip()
-
-
-def _claude_multi_turn(system: str, history: list[dict], user_msg: str) -> str:
-    """Anthropic Messages API: system is a separate arg, no system role in messages."""
-    msgs = []
-    for m in history:
-        # Map our generic role names to Anthropic's. Anthropic only
-        # accepts 'user' and 'assistant' in the messages list.
-        role = m.get("role")
-        if role in ("user", "assistant"):
-            msgs.append({"role": role, "content": m["content"]})
-    msgs.append({"role": "user", "content": user_msg})
-
-    from app.anthropic_client import _get_client as claude_client
-    resp = claude_client().messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=1024,
-        system=system,
-        messages=msgs,
-    )
-    parts = []
-    for block in resp.content:
-        if getattr(block, "type", None) == "text":
-            parts.append(block.text)
-    return "\n".join(parts).strip() or "(empty response)"
 
 
 # Build the graph. Same wiring as iter-4, plus a stub branch for
