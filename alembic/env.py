@@ -31,7 +31,9 @@ url = settings.DATABASE_URL.replace("+aiosqlite", "")
 # Resolve relative SQLite paths against APP_DATA_DIR (mirroring engine.py),
 # falling back to the OS-conventional default so CLI alembic runs and the
 # Tauri sidecar uvicorn process share one DB.
-if url.startswith("sqlite:///"):
+# Use the URL-style absolute path (4 slashes for sqlite://) so the sync
+# engine opens the same file as the app's async engine.
+if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
     from pathlib import Path
     from app.core.config import default_app_data_dir
     relative = url.replace("sqlite:///", "", 1)
@@ -42,7 +44,7 @@ if url.startswith("sqlite:///"):
     )
     full = (data_dir / relative).resolve()
     full.parent.mkdir(parents=True, exist_ok=True)
-    url = f"sqlite:///{full}"
+    url = "sqlite://" + "/" + full.as_posix()
 config.set_main_option("sqlalchemy.url", url)
 
 
@@ -65,16 +67,26 @@ def run_migrations_online() -> None:
     Alembic runs synchronously. Using a sync engine here avoids conflicts
     with the app's async event loop when called from lifespan.
     """
+    import sys
+    print(f"[env.py] creating sync engine (pid={__import__('os').getpid()})", flush=True)
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    print(f"[env.py] engine url: {connectable.url}", flush=True)
     with connectable.connect() as connection:
+        print(f"[env.py] connected", flush=True)
         context.configure(connection=connection, target_metadata=target_metadata)
+        print(f"[env.py] configured context", flush=True)
         with context.begin_transaction():
+            print(f"[env.py] transaction begun", flush=True)
             context.run_migrations()
+            print(f"[env.py] migrations done", flush=True)
+    print(f"[env.py] done", flush=True)
+    print(f"[env.py] disposing engine", flush=True)
     connectable.dispose()
+    print(f"[env.py] disposed", flush=True)
 
 
 if context.is_offline_mode():

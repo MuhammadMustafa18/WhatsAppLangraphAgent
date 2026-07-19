@@ -190,19 +190,19 @@ async def _find_provider_by_name(db, user_id: str, name: str) -> str | None:
 async def lifespan(app: FastAPI):
     global _client
 
-    # Auto-run pending migrations on startup
-    from alembic.config import Config as AlembicConfig
-    from alembic import command as alembic_command
-    alembic_cfg = AlembicConfig("alembic.ini")
-    alembic_command.upgrade(alembic_cfg, "head")
-    log.info("Database migrations applied (alembic upgrade head)")
+    # NOTE: alembic auto-migration DISABLED. On Windows + aiosqlite the
+    # sync alembic command inside the lifespan's event loop hangs in
+    # cleanup (after migrations finish, before the next log line).
+    # Workaround: run `alembic upgrade head` manually before starting
+    # uvicorn. The schema is stable so this is a one-time thing per
+    # dev session. See git log for the failed attempts.
 
     if _desktop_mode:
         log.info("Running in desktop mode (OpenWA not configured)")
         app.state.graph = None
     else:
         from app.openwa_client import OpenWAClient
-
+        log.info("Lifespan: constructing OpenWA client...")
         api_key = settings.OPENWA_API_KEY
         if not api_key or api_key.startswith("replace-me"):
             raise RuntimeError(
@@ -210,16 +210,17 @@ async def lifespan(app: FastAPI):
                 "Create one in the OpenWA dashboard and put it in .env."
             )
         _client = OpenWAClient()
-        log.info("OpenWA client ready: %s session=%s",
+        log.info("Lifespan: OpenWA client ready: %s session=%s",
                  _client.base_url, _client.session_id)
         if _WEBHOOK_SECRET:
             log.info("Webhook HMAC verification: ON")
         else:
             log.warning("Webhook HMAC verification: OFF (no OPENWA_WEBHOOK_SECRET)")
+        log.info("Lifespan: building graph...")
         # Build the graph on this event loop so its AsyncSqliteSaver
         # background thread lives on the same loop that runs ainvoke().
         app.state.graph = await build_graph()
-        log.info("LangGraph compiled (async checkpointer ready)")
+        log.info("Lifespan: LangGraph compiled (async checkpointer ready)")
 
     # Phase 21e test support: if a fake build_graph was injected, run it
     # in desktop mode too (so webhook tests can stub the graph without
