@@ -1,13 +1,13 @@
 """ORM models — table definitions only.
 
 Each class = one database table. No queries, no business logic.
-Phase 4: User table. More tables added in later phases.
+Phase 4: User table. Phase 11: Provider table. Phase 19: Persona table.
 """
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -71,5 +71,47 @@ class Provider(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_providers_user_name"),
+    )
+
+
+class Persona(Base):
+    """A prompt + optional model override that drives chat behavior.
+
+    A persona is the 'who is talking' configuration: a system prompt, an
+    optional knowledge base, and an optional model_override pointing at one
+    of the user's Provider rows. When model_override is NULL, the chat
+    layer falls back to the user's default Provider.
+
+    Each persona is owned by one user via FK with ON DELETE CASCADE, and
+    `model_override` is FK to providers so deleting a provider cascades
+    NULL into persona rows (rather than blocking the delete or orphaning).
+    """
+
+    __tablename__ = "personas"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String(100), nullable=False)
+    system_prompt = Column(Text, nullable=False)
+    knowledge_base = Column(Text, nullable=True)
+    model_override = Column(
+        String(36),
+        ForeignKey("providers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    created_at = Column(
+        DateTime, nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_personas_user_name"),
     )
 
