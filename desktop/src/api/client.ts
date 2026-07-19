@@ -6,7 +6,8 @@ export async function apiFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const { token, refreshToken, setTokens, logout } = useAuthStore.getState();
+  const { token, refreshToken, setAccessToken, logout } =
+    useAuthStore.getState();
 
   const headers = new Headers(options.headers);
   if (token) {
@@ -25,7 +26,8 @@ export async function apiFetch(
 
     if (refreshRes.ok) {
       const data = await refreshRes.json();
-      setTokens(data.access_token, data.refresh_token);
+      // Just rotate the access token; keep the user we already have.
+      setAccessToken(data.access_token, data.refresh_token);
 
       // Retry original request with new token
       headers.set("Authorization", `Bearer ${data.access_token}`);

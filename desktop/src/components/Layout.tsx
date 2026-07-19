@@ -1,4 +1,4 @@
-import { Outlet, Link, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
 
 const nav = [
@@ -11,7 +11,13 @@ const nav = [
 
 export default function Layout() {
   const location = useLocation();
-  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
@@ -35,10 +41,27 @@ export default function Layout() {
             </Link>
           ))}
         </nav>
-        <div className="p-2 border-t border-gray-700">
+        {/* User identity + logout — always visible when authenticated.
+            App.tsx's ProtectedRoute guarantees a token exists by the time
+            Layout renders. */}
+        <div className="p-3 border-t border-gray-700">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold uppercase">
+              {user?.username?.[0] ?? "?"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-gray-500">Logged in as</div>
+              <div
+                className="text-sm font-medium truncate"
+                title={user?.username ?? ""}
+              >
+                {user?.username ?? "(unknown)"}
+              </div>
+            </div>
+          </div>
           <button
-            onClick={logout}
-            className="w-full px-3 py-2 text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded"
+            onClick={handleLogout}
+            className="w-full px-3 py-2 text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded text-sm"
           >
             Logout
           </button>

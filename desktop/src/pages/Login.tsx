@@ -1,48 +1,48 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
+import { login, me, register } from "../api/auth";
 
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const setTokens = useAuthStore((s) => s.setTokens);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
 
-    const endpoint = isRegister ? "/auth/register" : "/auth/login";
     try {
-      const res = await fetch(`http://127.0.0.1:18234${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+      // 1. Register or login → tokens.
+      const tokens = isRegister
+        ? await register({ username, password })
+        : await login({ username, password });
+
+      // 2. Persist tokens (no user yet — that comes from /auth/me).
+      setTokens(tokens.access_token, tokens.refresh_token, {
+        id: "",
+        username,
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setTokens(data.access_token, data.refresh_token);
-        navigate("/");
-        return;
+      // 3. Fetch the real user (id + username) so the sidebar can show it.
+      try {
+        const me_ = await me();
+        useAuthStore.getState().setUser({ id: me_.id, username: me_.username });
+      } catch {
+        // /auth/me failed but tokens are valid — fall back to what we have.
+        // The sidebar will show the username we typed, which is fine.
       }
 
-      let detail = `HTTP ${res.status}`;
-      try {
-        const data = await res.json();
-        detail = data.detail || detail;
-      } catch {
-        // body wasn't JSON
-      }
-      setError(detail);
+      navigate("/");
     } catch (err) {
-      setError(
-        `Cannot reach backend at http://127.0.0.1:18234 — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -68,6 +68,8 @@ export default function Login() {
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              disabled={submitting}
+              autoComplete="username"
             />
           </div>
 
@@ -79,22 +81,30 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              disabled={submitting}
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              minLength={6}
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-medium"
+            disabled={submitting}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-medium disabled:opacity-50"
           >
-            {isRegister ? "Register" : "Login"}
+            {submitting ? "Working..." : isRegister ? "Register" : "Login"}
           </button>
         </form>
 
         <p className="text-gray-400 text-sm text-center mt-4">
           {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
-            onClick={() => setIsRegister(!isRegister)}
+            onClick={() => {
+              setIsRegister(!isRegister);
+              setError("");
+            }}
             className="text-blue-400 hover:underline"
+            disabled={submitting}
           >
             {isRegister ? "Login" : "Register"}
           </button>
