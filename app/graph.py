@@ -27,11 +27,14 @@ import logging
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.anthropic_client import chat as claude_chat
 from app.core.config import get_settings
+from app.db.models import Persona as PersonaRow, Provider as ProviderRow
 from app.llm import chat as free_chat, _get_client as free_client
 from app.personas import BOOKING_STUB_REPLY, CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
+from app.repositories import persona_repo, provider_repo
 from app.state import Persona, State
 
 log = logging.getLogger("app.graph")
@@ -49,6 +52,106 @@ _CLASSIFY_MODEL = "auto"
 # Where the SQLite checkpointer stores conversation state. One DB for
 # the whole app — thread_id inside the DB separates conversations.
 _CHECKPOINT_DB = settings.CHECKPOINT_DB
+
+
+# --- Phase 21b: runtime resolution helpers --------------------------------
+#
+# Pure functions. No graph wiring yet. Phase 21c will call these from
+# `generate` once we've validated them with a script.
+#
+# Fallback chain (in priority order):
+#   1. Explicit state["persona_id"] / state["provider_id"] — set by
+#      main.py from a slash prefix in 21e.
+#   2. Persona row's `model_override` (for providers) — a persona can
+#      pin itself to one provider regardless of the user's default.
+#   3. User's default provider / first active persona — used when
+#      nothing is set explicitly.
+#   4. Hardcoded `personas.py` literals — back-compat fallback so the
+#      bot still answers if a user has zero personas / providers.
+async def _resolve_persona(
+    db: AsyncSession, user_id: str, state: State
+) -> PersonaRow:
+    """Find the persona this turn should use.
+
+    Order:
+      1. state["persona_id"] — explicit ID (post-21e).
+      2. First active persona for this user, newest first.
+      3. persona named "personal" — match the legacy DEFAULT_PERSONA.
+
+    Raises LookupError if no persona is reachable. The graph has no
+    useful behavior without one.
+    """
+    pid = state.get("persona_id")
+    if pid:
+        row = await persona_repo.get_persona_by_id(db, pid)
+        if row is not None and row.user_id == user_id:
+            return row
+        log.warning(
+            "persona_id=%s not found or not owned by user=%s; falling back",
+            pid, user_id,
+        )
+
+    rows = await persona_repo.list_personas_by_user(db, user_id)
+    active = [r for r in rows if r.is_active]
+    if active:
+        return active[0]
+
+    # Legacy fallback: a persona literally named "personal". Lets a
+    # brand-new install boot before any persona row exists.
+    for r in rows:
+        if r.name == DEFAULT_PERSONA:
+            return r
+
+    raise LookupError(
+        f"no usable persona for user {user_id!r}: "
+        f"create one at /personas"
+    )
+
+
+async def _resolve_provider(
+    db: AsyncSession, user_id: str, state: State, persona: PersonaRow
+) -> ProviderRow:
+    """Find the provider this turn should call.
+
+    Order:
+      1. state["provider_id"] — explicit ID (post-21e).
+      2. persona.model_override — pinned by the persona itself.
+      3. User's is_default provider.
+      4. The user's first provider (no preference).
+
+    Raises LookupError if the user has no providers at all.
+    """
+    pid = state.get("provider_id")
+    if pid:
+        row = await provider_repo.get_provider_by_id(db, pid)
+        if row is not None and row.user_id == user_id:
+            return row
+        log.warning(
+            "provider_id=%s not found or not owned by user=%s; falling back",
+            pid, user_id,
+        )
+
+    if persona.model_override:
+        row = await provider_repo.get_provider_by_id(db, persona.model_override)
+        if row is not None and row.user_id == user_id:
+            return row
+        log.warning(
+            "persona %s model_override=%s unreachable; falling back",
+            persona.id, persona.model_override,
+        )
+
+    default = await provider_repo.get_default_provider(db, user_id)
+    if default is not None:
+        return default
+
+    all_rows = await provider_repo.list_providers_by_user(db, user_id)
+    if all_rows:
+        return all_rows[0]
+
+    raise LookupError(
+        f"no usable provider for user {user_id!r}: "
+        f"create one at /providers"
+    )
 
 
 def classify(state: State) -> dict:
