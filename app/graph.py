@@ -270,30 +270,6 @@ async def generate(
         "generated reply (persona=%s provider=%s chars=%d)",
         persona.name, provider_row.name, len(text),
     )
-
-    # Phase 22: record this turn into the conversations table so the
-    # History tab can query it. Sync write — Phase 30's Job queue will
-    # move this off the critical path later. Failures are logged but
-    # never raised; the user already got their reply.
-    thread_id = (config or {}).get("configurable", {}).get("thread_id", "default")
-    channel = (config or {}).get("configurable", {}).get("channel", "whatsapp")
-    try:
-        from app.services import conversation_service
-        async with async_session() as db:
-            await conversation_service.record_turn(
-                db,
-                user_id=user_id,
-                thread_id=thread_id,
-                messages=new_history,
-                persona_id=persona.id,
-                channel=channel,
-            )
-    except Exception:
-        log.exception(
-            "failed to record conversation turn (thread=%s user=%s)",
-            thread_id, user_id,
-        )
-
     return {"reply": text, "messages": new_history}
 
 

@@ -8,8 +8,6 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
-from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -115,74 +113,5 @@ class Persona(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_personas_user_name"),
-    )
-
-
-class Conversation(Base):
-    """Queryable conversation history for one thread.
-
-    The checkpointer (data/checkpoints.sqlite) is the source of truth
-    for full graph state across all turns. This table is a queryable
-    mirror: one row per thread with the recent message history as JSON,
-    so the UI's History tab can list threads and show recent messages
-    with a plain SQL query.
-
-    Phase 22 schema:
-      - id (UUID PK)
-      - user_id (FK -> users.id, ON DELETE CASCADE)
-      - thread_id (str) — same key as the checkpointer (chat_id for
-        WhatsApp, a generated id for the in-app Chat Preview)
-      - channel ('whatsapp' | 'app' | 'webhook') — source of the
-        inbound messages. Phase 22 uses a string; Phase 28 (Connections)
-        will replace this with a real FK to the future connections table
-        via a follow-up migration. Until then, the string is the
-        source of truth for grouping in the UI.
-      - persona_id (FK -> personas.id, ON DELETE SET NULL) — the persona
-        that the last turn resolved to. Nullable so conversations from
-        when a persona was deleted still appear in history.
-      - messages (JSON) — list of {role, content} pairs, capped at
-        50 most-recent turns by the service layer.
-      - last_message_at (DateTime) — convenience for "recent threads"
-        ORDER BY queries.
-      - created_at, updated_at
-
-    `messages` uses JSON type which on SQLite becomes TEXT under the
-    hood. Future-proofing: switching to Postgres later needs no schema
-    change since JSON is native there.
-    """
-
-    __tablename__ = "conversations"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(
-        String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    thread_id = Column(String(200), nullable=False, index=True)
-    channel = Column(String(20), nullable=False, default="whatsapp", server_default=text("'whatsapp'"))
-    persona_id = Column(
-        String(36),
-        ForeignKey("personas.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    messages = Column(JSON, nullable=False, default=list, server_default=text("'[]'"))
-    last_message_at = Column(
-        DateTime, nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
-    )
-    created_at = Column(
-        DateTime, nullable=False, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
-    )
-    updated_at = Column(
-        DateTime, nullable=False, default=utcnow,
-        server_default=text("CURRENT_TIMESTAMP"),
-        onupdate=utcnow,
-    )
-
-    __table_args__ = (
-        # One row per (user_id, thread_id, channel). Same thread_id
-        # across channels (e.g. /chat vs WhatsApp) makes a separate row.
-        UniqueConstraint("user_id", "thread_id", "channel", name="uq_conversations_thread"),
     )
 

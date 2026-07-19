@@ -451,14 +451,10 @@ async def _handle(
         # user_id is consumed by classify + generate to resolve persona
         # + provider from the DB at runtime (Phase 21a-e). None means
         # "no user context yet" → graph falls back to _legacy_generate.
-        # channel tells the conversation layer (Phase 22) where the
-        # message came from; default 'whatsapp' because the webhook is
-        # always WhatsApp. Future in-app Chat Preview will pass 'app'.
         config = {
             "configurable": {
                 "thread_id": chat_id,
                 "user_id": user_id,
-                "channel": "whatsapp",
             }
         }
         result = await app.state.graph.ainvoke(initial_state, config=config)
