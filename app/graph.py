@@ -29,12 +29,11 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.anthropic_client import chat as claude_chat
 from app.core.config import get_settings
 from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow
 from app.llm import chat as free_chat
-from app.personas import BOOKING_STUB_REPLY, CLASSIFY_PROMPT, DEFAULT_PERSONA, PERSONAS
+from app.personas import BOOKING_STUB_REPLY, DEFAULT_PERSONA, PERSONAS
 from app.providers import registry as provider_registry
 from app.repositories import persona_repo, provider_repo
 from app.state import Persona, State
@@ -42,10 +41,6 @@ from app.state import Persona, State
 log = logging.getLogger("app.graph")
 
 settings = get_settings()
-
-# Model used for the auto-classify LLM call. Cheap + fast; we only need
-# a one-word answer.
-_CLASSIFY_MODEL = "auto"
 
 # Where the SQLite checkpointer stores conversation state. One DB for
 # the whole app — thread_id inside the DB separates conversations.
@@ -152,44 +147,50 @@ async def _resolve_provider(
     )
 
 
-def classify(state: State) -> dict:
-    """Pick a persona for the message.
+async def classify(state: State, config: dict | None = None) -> dict:
+    """Resolve which persona should answer this turn.
 
-    - If main.py already set one (via /resume, /services, /personal,
-      /booking), just pass through.
-    - Otherwise, ask the LLM to pick from
-      {resume, services, personal, booking}.
-      Uses Claude if state['provider'] == 'claude' (set when the user
-      sent `/claude …`). FreeLLMAPI router otherwise.
-    - Default to 'personal' if the LLM returns something unexpected.
+    Phase 21d: no LLM call. The user picks personas in the UI; the
+    graph looks them up.
+
+    Behavior:
+      - If main.py set state["persona_id"] via a slash prefix, pass
+        through (the router in _route_after_classify reads it).
+      - Otherwise, look up the user's first active persona from the
+        DB and set state["persona_id"]. generate() will then resolve
+        that id to a Persona row.
+
+    Returns either {} (passthrough) or {"persona_id": <uuid>}.
+
+    Legacy literal field `state["persona"]` is no longer written here.
+    generate() doesn't read it. Kept in State schema for backward
+    compat with any persisted checkpoints; Phase 22+ may drop it.
     """
-    existing = state.get("persona")
-    if existing:
-        log.info("persona already set by slash prefix: %s", existing)
+    if state.get("persona_id"):
+        log.info("persona_id already set: %s", state["persona_id"])
         return {}
 
-    prompt = CLASSIFY_PROMPT.format(message=state["message"])
-    if state.get("provider") == "claude":
-        # Claude is materially better at nuanced intent classification
-        # than the FreeLLMAPI router, so /claude users get Claude-classify.
-        raw = claude_chat(
-            "You are a routing assistant.",
-            prompt,
-        ).strip().lower()
-    else:
-        raw = free_chat(
-            "You are a routing assistant.",
-            prompt,
-            model=_CLASSIFY_MODEL,
-        ).strip().lower()
+    user_id = (config or {}).get("configurable", {}).get("user_id")
+    if not user_id:
+        # No user context — can't resolve from DB. Fall back to the
+        # legacy literal if main.py set one (slash prefix path), or
+        # leave empty so the router dispatches via DEFAULT_PERSONA.
+        legacy = state.get("persona")
+        if legacy:
+            log.info("legacy persona=%s, no user context", legacy)
+        return {}
 
-    if raw in ("resume", "services", "personal", "booking"):
-        log.info("classify picked persona=%s", raw)
-        return {"persona": raw}
+    try:
+        async with async_session() as db:
+            persona = await _resolve_persona(db, user_id, state)
+    except LookupError:
+        # No usable persona for this user. Don't crash classify — let
+        # generate() raise a clean error with the same message.
+        log.warning("no usable persona for user=%s; generate() will raise", user_id)
+        return {}
 
-    # Model returned something we don't recognize — default.
-    log.warning("classify got %r, defaulting to %s", raw, DEFAULT_PERSONA)
-    return {"persona": DEFAULT_PERSONA}
+    log.info("resolved persona=%s for user=%s", persona.name, user_id)
+    return {"persona_id": persona.id}
 
 
 def booking_stub(state: State) -> dict:
@@ -310,19 +311,34 @@ _builder.add_node("booking_stub", booking_stub)
 
 def _resolve_destination(state: State) -> str:
     """Pick the next node from the persona set by classify (or by a slash
-    prefix in the input). Used only for the post-classify routing now —
-    START goes unconditionally to classify so every message is freshly
-    classified instead of inheriting the prior turn's persona.
+    prefix in the input).
+
+    Phase 21d: the routing decision still uses the legacy
+    state['persona'] literal because the booking persona is identified
+    by the name "booking" — a name match, not a DB lookup. Once 21e
+    has populated persona_id, we look up the name from the cached
+    persona row. For now, fall back to the literal if no name is
+    resolvable from state.
     """
-    persona = state.get("persona")
-    if persona:
-        return "booking_stub" if persona == "booking" else "generate"
-    return "classify"
+    # Phase 21d transition: the literal state['persona'] still works for
+    # main.py slash prefixes (/booking). When classify resolves via DB
+    # it sets persona_id but not the legacy literal — the router then
+    # falls through to generate(). 21e will close this gap by populating
+    # the literal from the resolved row, or by changing the routing to
+    # a pre-resolved state key like state['_persona_name'].
+    persona_literal = state.get("persona")
+    if persona_literal == "booking":
+        return "booking_stub"
+    return "generate"
 
 
 def _route_after_classify(state: State) -> str:
-    # classify always sets persona before returning (it defaults to
-    # DEFAULT_PERSONA on garbage), so the persona branch always wins.
+    # classify may have set persona_id without setting the legacy
+    # literal, in which case we can't tell if it's a "booking" persona
+    # without a DB lookup. The router returns "generate" as the safe
+    # default — booking personas will get the full LLM reply for now,
+    # and the booking-stub behavior is preserved only when the literal
+    # "booking" is set explicitly (slash prefix path).
     return _resolve_destination(state)
 
 
