@@ -1,0 +1,28 @@
+{
+  "name": "baileys-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx baileys-sidecar.ts",
+    "build": "esbuild baileys-sidecar.ts --bundle --platform=node --outfile=dist/index.js",
+    "compile": "bun build --compile ./dist/index.js --outfile baileys-sidecar"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "express": "^4.21.0",
+    "pino": "^9.4.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.5.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.23.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}

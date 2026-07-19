@@ -43,6 +43,10 @@ data/app.sqlite-*
 # Tauri / desktop build artifacts
 desktop/node_modules/
 desktop/dist/
+
+# Baileys sidecar
+baileys-sidecar/node_modules/
+baileys-sidecar/test-baileys.js
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 

@@ -1,16 +1,16 @@
 """Webhook entrypoint.
 
-OpenWA POSTs events here. We:
-  1. Verify the HMAC signature (so spoofed POSTs can't drive our graph).
-  2. Pull out the message body and chat id.
-  3. Resolve the user_id from the DB (single-user install: first user
+The Baileys sidecar (standalone binary, spawned by Tauri) forwards
+incoming WhatsApp messages to /webhook over localhost. We:
+  1. Pull out the message body and chat id.
+  2. Resolve the user_id from the DB (single-user install: first user
      wins — Tauri app is one-user, per the Phase 21 plan).
-  4. Parse slash prefixes into persona_id + provider_id UUIDs by
+  3. Parse slash prefixes into persona_id + provider_id UUIDs by
      matching against the user's Persona / Provider rows by name.
-  5. Run the LangGraph with that state + a config carrying user_id and
+  4. Run the LangGraph with that state + a config carrying user_id and
      thread_id, so the graph's classify + generate can resolve from
      the DB.
-  6. Send the graph's reply back via OpenWA.
+  5. Send the graph's reply back via the Baileys sidecar.
 
 This file is the *bridge* between the transport and the graph. It
 should stay mechanical — all the interesting logic lives in `graph.py`.
@@ -19,8 +19,6 @@ should stay mechanical — all the interesting logic lives in `graph.py`.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import logging
 import os
 import sys
@@ -53,15 +51,11 @@ logging.basicConfig(level=settings.LOG_LEVEL,
                     format="%(asctime)s %(levelname)s %(message)s")
 
 # Module-level client; lifespan manages its lifecycle.
-_client = None  # OpenWAClient | None
+_client = None  # BaileysClient | None
 
-# HMAC secret OpenWA uses to sign outbound webhook payloads. If you don't
-# want signature verification (e.g. running locally without a secret set),
-# leave this unset and the verification step is skipped.
-_WEBHOOK_SECRET = settings.OPENWA_WEBHOOK_SECRET.strip()
-
-# Desktop mode: skip OpenWA if API key not configured
-_desktop_mode = not settings.OPENWA_API_KEY or settings.OPENWA_API_KEY.startswith("replace-me")
+# Desktop mode — Baileys sidecar is always available when Tauri is running,
+# so the graph is always built. The sidecar forwards incoming WhatsApp
+# messages to /webhook over localhost (no internet path, no HMAC needed).
 
 # Single-user install: cache the resolved user_id after the first
 # webhook hit. Lookup is once per process; Tauri app is one-user.
@@ -197,36 +191,14 @@ async def lifespan(app: FastAPI):
     # uvicorn. The schema is stable so this is a one-time thing per
     # dev session. See git log for the failed attempts.
 
-    if _desktop_mode:
-        log.info("Running in desktop mode (OpenWA not configured)")
-        app.state.graph = None
-    else:
-        from app.openwa_client import OpenWAClient
-        log.info("Lifespan: constructing OpenWA client...")
-        api_key = settings.OPENWA_API_KEY
-        if not api_key or api_key.startswith("replace-me"):
-            raise RuntimeError(
-                "OPENWA_API_KEY is unset or still a placeholder. "
-                "Create one in the OpenWA dashboard and put it in .env."
-            )
-        _client = OpenWAClient()
-        log.info("Lifespan: OpenWA client ready: %s session=%s",
-                 _client.base_url, _client.session_id)
-        if _WEBHOOK_SECRET:
-            log.info("Webhook HMAC verification: ON")
-        else:
-            log.warning("Webhook HMAC verification: OFF (no OPENWA_WEBHOOK_SECRET)")
-        log.info("Lifespan: building graph...")
-        # Build the graph on this event loop so its AsyncSqliteSaver
-        # background thread lives on the same loop that runs ainvoke().
-        app.state.graph = await build_graph()
-        log.info("Lifespan: LangGraph compiled (async checkpointer ready)")
+    from app.baileys_client import BaileysClient
+    log.info("Lifespan: connecting to Baileys sidecar...")
+    _client = BaileysClient(base_url=settings.BAILEYS_SIDECAR_URL)
+    log.info("Lifespan: Baileys client ready at %s", _client.base_url)
 
-    # Phase 21e test support: if a fake build_graph was injected, run it
-    # in desktop mode too (so webhook tests can stub the graph without
-    # a real OpenWA key).
-    if app.state.graph is None and getattr(build_graph, "_is_fake", False):
-        app.state.graph = await build_graph()
+    log.info("Lifespan: building graph...")
+    app.state.graph = await build_graph()
+    log.info("Lifespan: LangGraph compiled (async checkpointer ready)")
 
     yield
 
@@ -278,17 +250,12 @@ async def debug_webhook(request: Request) -> dict[str, str]:
     return {"status": "debug", "headers": str(headers)}
 
 
-def _verify_signature(raw_body: bytes, signature_header: str | None) -> bool:
-    """OpenWA sends `X-OpenWA-Signature: sha256=<hex>`. Compare in constant time."""
-    if not _WEBHOOK_SECRET:
-        return True  # verification disabled
-    if not signature_header or not signature_header.startswith("sha256="):
-        return False
-    expected = hmac.new(
-        _WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256
-    ).hexdigest()
-    provided = signature_header.split("=", 1)[1]
-    return hmac.compare_digest(expected, provided)
+def _verify_signature(_raw_body: bytes, _signature_header: str | None) -> bool:
+    """HMAC verification is disabled — messages come from the local Baileys
+    sidecar over localhost, not from OpenWA over the internet. If you need
+    verification (e.g. exposing /webhook to a remote service), re-enable
+    with a shared secret."""
+    return True
 
 
 # Chat-ID suffixes OpenWA's whatsapp-web.js engine can't reply to.
@@ -482,11 +449,11 @@ async def _handle(
             except Exception:
                 pass
             log.warning(
-                "OpenWA send-text failed (chat_id=%s, status=%d): %s",
+                "send-text failed (chat_id=%s, status=%d): %s",
                 chat_id, exc.response.status_code, body_text,
             )
         except httpx.HTTPError:
-            log.exception("OpenWA send-text transport error for chat_id=%s", chat_id)
+            log.exception("send-text transport error for chat_id=%s", chat_id)
     except Exception:
         log.exception("Background handler crashed for chat_id=%s", chat_id)
 

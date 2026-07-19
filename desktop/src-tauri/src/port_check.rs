@@ -1,13 +1,13 @@
 //! Port management and service status observability.
 //!
-//! On startup, checks all critical ports (uvicorn, ngrok, OpenWA) and
-//! reports their status as structured JSON logs. Kills stale processes
-//! on **Tauri-managed** ports (backend + ngrok) before spawning new ones.
+//! On startup, checks all critical ports and reports their status.
+//! Kills stale processes on **Tauri-managed** ports before spawning
+//! fresh ones.
 //!
-//! OpenWA (port 2785) is deliberately excluded from the kill list —
-//! the user runs it manually via Docker, and killing docker-proxy.exe
-//! (the host process holding that port) would break the container's
-//! port mapping.
+//! Managed ports:
+//!   18234  — uvicorn (Python FastAPI backend)
+//!   2786   — Baileys sidecar (WhatsApp gateway)
+//!   2787   — Baileys sidecar WebSocket (QR / status for React UI)
 
 use std::process::Command;
 
@@ -16,22 +16,21 @@ use std::process::Command;
 /// Backend FastAPI / uvicorn port.
 pub const BACKEND_PORT: u16 = 18234;
 
-/// ngrok web inspector port (local dashboard).
-pub const NGROK_INSPECTOR_PORT: u16 = 4040;
+/// Baileys sidecar HTTP API (replaces OpenWA + ngrok).
+pub const BAILEYS_PORT: u16 = 2786;
 
-/// OpenWA WhatsApp bridge API (user-managed via Docker — not auto-killed).
-pub const OPENWA_PORT: u16 = 2785;
+/// Baileys sidecar WebSocket (QR codes / connection status for React UI).
+pub const BAILEYS_WS_PORT: u16 = 2787;
 
 /// Ports Tauri manages: kills stale processes before starting fresh ones.
-const MANAGED_PORTS: [u16; 2] = [BACKEND_PORT, NGROK_INSPECTOR_PORT];
+const MANAGED_PORTS: [u16; 3] = [BACKEND_PORT, BAILEYS_PORT, BAILEYS_WS_PORT];
 
 /// All ports we know about (for observability / status reporting).
-/// This includes user-managed ports like OpenWA so the startup log
-/// shows the full picture even though we don't touch them.
-const KNOWN_PORTS: [(u16, &str); 3] = [
-    (BACKEND_PORT, "uvicorn (backend)"),
-    (NGROK_INSPECTOR_PORT, "ngrok (tunnel)"),
-    (OPENWA_PORT, "OpenWA (WhatsApp bridge)"),
+const KNOWN_PORTS: [u16; 4] = [
+    BACKEND_PORT,
+    BAILEYS_PORT,
+    BAILEYS_WS_PORT,
+    2785, // OpenWA — only if the user still runs Docker
 ];
 
 
@@ -68,7 +67,7 @@ pub fn check_port(port: u16) -> PortStatus {
 pub fn check_all_ports() -> Vec<PortStatus> {
     KNOWN_PORTS
         .iter()
-        .map(|(port, _name)| check_port(*port))
+        .map(|port| check_port(*port))
         .collect()
 }
 
@@ -195,8 +194,9 @@ pub fn ensure_port_free(port: u16) -> Result<(), String> {
 fn service_name_for(port: u16) -> String {
     match port {
         BACKEND_PORT => "uvicorn (backend)".to_string(),
-        NGROK_INSPECTOR_PORT => "ngrok (tunnel)".to_string(),
-        OPENWA_PORT => "OpenWA (WhatsApp bridge)".to_string(),
+        BAILEYS_PORT => "Baileys (WhatsApp gateway)".to_string(),
+        BAILEYS_WS_PORT => "Baileys WebSocket".to_string(),
+        2785 => "OpenWA (WhatsApp bridge — Docker)".to_string(),
         _ => format!("unknown service on port {}", port),
     }
 }
@@ -297,17 +297,19 @@ mod tests {
     #[test]
     fn test_service_name_for_known_ports() {
         assert_eq!(service_name_for(BACKEND_PORT), "uvicorn (backend)");
-        assert_eq!(service_name_for(NGROK_INSPECTOR_PORT), "ngrok (tunnel)");
-        assert_eq!(service_name_for(OPENWA_PORT), "OpenWA (WhatsApp bridge)");
+        assert_eq!(service_name_for(BAILEYS_PORT), "Baileys (WhatsApp gateway)");
+        assert_eq!(service_name_for(BAILEYS_WS_PORT), "Baileys WebSocket");
     }
 
     #[test]
-    fn test_managed_ports_does_not_include_openwa() {
-        // The whole point of the split: MANAGED_PORTS must NOT include
-        // OpenWA's port so kill_all_stale() never touches Docker.
+    fn test_managed_ports_includes_baileys() {
         assert!(
-            !MANAGED_PORTS.contains(&OPENWA_PORT),
-            "OpenWA port must not be in MANAGED_PORTS — it's user-managed via Docker"
+            MANAGED_PORTS.contains(&BAILEYS_PORT),
+            "Baileys port must be in MANAGED_PORTS"
+        );
+        assert!(
+            MANAGED_PORTS.contains(&BAILEYS_WS_PORT),
+            "Baileys WebSocket port must be in MANAGED_PORTS"
         );
     }
 }

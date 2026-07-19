@@ -1,8 +1,7 @@
-mod ngrok;
+mod baileys_sidecar;
 mod port_check;
 mod sidecar;
 
-use port_check::BACKEND_PORT;
 use tauri::{Listener, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,37 +30,29 @@ pub fn run() {
                     return;
                 }
                 log::info!("Sidecar started, waiting for backend...");
-                let manager = match handle.try_state::<sidecar::SidecarManager>() {
+                let uvicorn = match handle.try_state::<sidecar::SidecarManager>() {
                     Some(m) => m,
                     None => {
                         log::error!("SidecarManager not registered");
                         return;
                     }
                 };
-                if let Err(e) = manager.wait_for_ready().await {
+                if let Err(e) = uvicorn.wait_for_ready().await {
                     log::error!("Backend failed to start: {}", e);
                     return;
                 }
                 log::info!("Backend is ready!");
 
-                // ── Spawn ngrok pointing at the backend ──
-                if let Err(e) = ngrok::setup_ngrok(&handle, BACKEND_PORT) {
-                    log::warn!("Failed to spawn ngrok: {}", e);
-                    log::warn!("Backend is running on 127.0.0.1:{} but has no public URL.",
-                               BACKEND_PORT);
-                    log::warn!("Run ngrok manually: ngrok http {}", BACKEND_PORT);
+                // ── Spawn the Baileys WhatsApp gateway sidecar ──
+                if let Err(e) = baileys_sidecar::setup_baileys(&handle) {
+                    log::warn!("Failed to start Baileys sidecar: {}", e);
+                    log::warn!("WhatsApp gateway unavailable. No ngrok/OpenWA needed.");
                 } else {
-                    let ngrok_mgr = handle
-                        .try_state::<ngrok::NgrokManager>()
-                        .expect("ngrok manager missing");
-                    match ngrok_mgr.wait_for_ready(BACKEND_PORT).await {
-                        Ok(url) => {
-                            log::info!("Public URL: {}", url);
-                            log::info!("Paste this into OpenWA webhook config: http://localhost:2785");
-                        }
-                        Err(e) => {
-                            log::error!("ngrok didn't report a public URL: {}", e);
-                        }
+                    let baileys = handle
+                        .try_state::<baileys_sidecar::BaileysManager>()
+                        .expect("BaileysManager not registered");
+                    if let Err(e) = baileys.wait_for_ready().await {
+                        log::error!("Baileys sidecar didn't come online: {}", e);
                     }
                 }
 
@@ -73,7 +64,7 @@ pub fn run() {
             // Cleanup on exit
             let handle = app.handle().clone();
             app.listen("exit-requested", move |_| {
-                ngrok::cleanup_ngrok(&handle);
+                baileys_sidecar::cleanup_baileys(&handle);
                 sidecar::cleanup_sidecar(&handle);
             });
 
@@ -86,7 +77,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                ngrok::cleanup_ngrok(window.app_handle());
+                baileys_sidecar::cleanup_baileys(window.app_handle());
                 sidecar::cleanup_sidecar(window.app_handle());
             }
         })

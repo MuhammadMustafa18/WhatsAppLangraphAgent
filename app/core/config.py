@@ -38,11 +38,10 @@ class Settings(BaseSettings):
     # --- Encryption (auto-generated on first boot if empty) ---
     ENCRYPTION_KEY: str = ""
 
-    # --- OpenWA ---
-    OPENWA_API_URL: str = "http://openwa:2785"
-    OPENWA_API_KEY: str = ""
-    OPENWA_SESSION_ID: str = "default"
-    OPENWA_WEBHOOK_SECRET: str = ""
+    # --- Baileys sidecar ---
+    # Local HTTP API of the Baileys WhatsApp gateway sidecar.
+    # Tauri spawns this process automatically; no Docker needed.
+    BAILEYS_SIDECAR_URL: str = "http://127.0.0.1:2786"
 
     # --- OpenAI / OpenAI-compatible ---
     OPENAI_API_KEY: str = ""
