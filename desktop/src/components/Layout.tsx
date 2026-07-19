@@ -20,57 +20,81 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
-      {/* Sidebar */}
-      <aside className="w-56 bg-gray-800 flex flex-col">
-        <div className="p-4 text-lg font-bold border-b border-gray-700">
-          WhatsApp Bot
-        </div>
-        <nav className="flex-1 p-2">
-          {nav.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={`block px-3 py-2 rounded mb-1 ${
-                location.pathname === item.to
-                  ? "bg-gray-700 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        {/* User identity + logout — always visible when authenticated.
-            App.tsx's ProtectedRoute guarantees a token exists by the time
-            Layout renders. */}
-        <div className="p-3 border-t border-gray-700">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold uppercase">
-              {user?.username?.[0] ?? "?"}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-gray-500">Logged in as</div>
-              <div
-                className="text-sm font-medium truncate"
+    <div className="min-h-screen bg-canvas text-ink flex flex-col">
+      {/* Announcement bar — Cohere's full-width black strip with microcopy */}
+      <div className="h-9 bg-cohere-black text-on-dark flex items-center justify-center px-lg">
+        <span className="text-micro">
+          Alpha build · expect rough edges.{" "}
+          <a
+            href="https://github.com/MuhammadMustafa18/WhatsAppLangraphAgent"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-white"
+          >
+            View source
+          </a>
+        </span>
+      </div>
+
+      {/* Top nav — three-zone: logo / menu / sign-in+CTA */}
+      <header className="border-b border-hairline bg-canvas">
+        <div className="mx-auto max-w-[1200px] px-lg flex items-center h-16 gap-8">
+          {/* Logo left */}
+          <Link
+            to="/"
+            className="font-display text-card-heading tracking-tight text-ink shrink-0"
+          >
+            WhatsApp Bot
+          </Link>
+
+          {/* Menu center */}
+          <nav className="flex-1 flex items-center justify-center gap-8">
+            {nav.map((item) => {
+              const active =
+                item.to === "/"
+                  ? location.pathname === "/"
+                  : location.pathname.startsWith(item.to);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`text-caption transition ${
+                    active
+                      ? "text-ink"
+                      : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Right zone — user + logout */}
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-soft-stone text-ink flex items-center justify-center text-caption font-medium uppercase">
+                {user?.username?.[0] ?? "?"}
+              </div>
+              <span
+                className="text-caption text-ink max-w-[120px] truncate"
                 title={user?.username ?? ""}
               >
                 {user?.username ?? "(unknown)"}
-              </div>
+              </span>
             </div>
+            <button onClick={handleLogout} className="btn-pill-outline">
+              Sign out
+            </button>
           </div>
-          <button
-            onClick={handleLogout}
-            className="w-full px-3 py-2 text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded text-sm"
-          >
-            Logout
-          </button>
         </div>
-      </aside>
+      </header>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto p-6">
-        <Outlet />
+      {/* Main content — generous section padding per Cohere whitespace philosophy */}
+      <main className="flex-1">
+        <div className="mx-auto max-w-[1200px] px-lg py-section">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

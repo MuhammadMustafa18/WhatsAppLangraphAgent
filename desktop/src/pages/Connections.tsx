@@ -5,32 +5,22 @@ import { useWhatsAppStore, ConnectionStatus } from "../stores/whatsapp";
 // Direct to Baileys sidecar (port 2786), not via the FastAPI backend (18234).
 const BAILEYS_URL = "http://127.0.0.1:2786";
 
-const STATUS_LABELS: Record<ConnectionStatus, { text: string; color: string; icon: string }> = {
-  disconnected: {
-    text: "Disconnected — waiting for sidecar...",
-    color: "text-yellow-400",
-    icon: "⏳",
-  },
-  qr: {
-    text: "Scan QR with WhatsApp to link your account",
-    color: "text-blue-400",
-    icon: "📱",
-  },
-  connecting: {
-    text: "Connecting...",
-    color: "text-yellow-400",
-    icon: "🔄",
-  },
-  connected: {
-    text: "WhatsApp connected and ready",
-    color: "text-green-400",
-    icon: "✅",
-  },
-  loggedOut: {
-    text: "Logged out — scan the QR again to reconnect",
-    color: "text-red-400",
-    icon: "🔴",
-  },
+const STATUS_LABELS: Record<
+  ConnectionStatus,
+  { text: string; tone: "ok" | "wait" | "warn" | "err" }
+> = {
+  disconnected: { text: "Disconnected — waiting for sidecar", tone: "wait" },
+  qr: { text: "Scan QR with WhatsApp to link your account", tone: "wait" },
+  connecting: { text: "Connecting", tone: "wait" },
+  connected: { text: "WhatsApp connected and ready", tone: "ok" },
+  loggedOut: { text: "Logged out — scan the QR again to reconnect", tone: "err" },
+};
+
+const TONE_DOT: Record<"ok" | "wait" | "warn" | "err", string> = {
+  ok: "bg-deep-green",
+  wait: "bg-coral",
+  warn: "bg-coral",
+  err: "bg-error",
 };
 
 export default function Connections() {
@@ -70,138 +60,166 @@ export default function Connections() {
     ? jid.replace(/@.*$/, "").replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, "+$1 $2 $3 $4")
     : null;
 
+  const isConnected = status === "connected";
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">WhatsApp Connection</h1>
+      {/* Hero declaration */}
+      <div className="mb-section flex items-start justify-between gap-12">
+        <div>
+          <p className="mono-label text-muted mb-3">Integrations</p>
+          <h1 className="font-display text-section-heading text-ink">
+            WhatsApp connection
+          </h1>
+        </div>
 
-        {status === "connected" && !confirming && (
+        {isConnected && !confirming && (
           <button
             onClick={() => {
               setLogoutError(null);
               setConfirming(true);
             }}
-            className="rounded-md border border-gray-700 px-3 py-1.5 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-400"
+            className="btn-pill-outline shrink-0"
           >
-            Logout
+            Sign out of WhatsApp
           </button>
         )}
 
-        {status === "connected" && confirming && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">Unlink this device?</span>
+        {isConnected && confirming && (
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-caption text-body-muted">
+              Unlink this device?
+            </span>
             <button
               onClick={() => setConfirming(false)}
               disabled={loggingOut}
-              className="rounded-md border border-gray-700 px-3 py-1.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:opacity-50"
+              className="btn-pill-outline disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleLogout}
               disabled={loggingOut}
-              className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+              className="btn-primary disabled:opacity-50"
             >
-              {loggingOut ? "Logging out…" : "Confirm"}
+              {loggingOut ? "Signing out…" : "Confirm"}
             </button>
           </div>
         )}
       </div>
 
       {logoutError && (
-        <div className="mb-4 max-w-lg rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-          Logout failed: {logoutError}
+        <div className="mb-8 max-w-2xl border border-error/30 bg-error/5 px-4 py-3 text-caption text-error rounded-sm">
+          Sign-out failed: {logoutError}
         </div>
       )}
 
-      {/* Sidecar status bar */}
+      {/* Sidecar status — trust strip / observability row */}
       <div
-        className={`p-3 rounded-lg mb-6 text-sm border ${
+        className={`mb-section flex items-center gap-3 px-4 py-3 border rounded-sm ${
           sidecarOnline
-            ? "bg-green-500/10 border-green-500/30 text-green-300"
-            : "bg-red-500/10 border-red-500/30 text-red-300"
+            ? "border-card-border bg-canvas"
+            : "border-error/30 bg-error/5"
         }`}
       >
-        {sidecarOnline
-          ? "● Baileys gateway is running"
-          : "○ Baileys gateway is offline — try restarting the app"}
+        <span
+          className={`h-2 w-2 rounded-full ${
+            sidecarOnline ? "bg-deep-green" : "bg-error"
+          }`}
+        />
+        <p className="mono-label">
+          {sidecarOnline
+            ? "Baileys gateway is running"
+            : "Baileys gateway is offline — try restarting the app"}
+        </p>
       </div>
 
-      {/* Main connection card */}
-      <div className="bg-gray-800 rounded-xl p-8 max-w-lg mx-auto">
-        <div className="text-center">
-          {/* Status icon */}
-          <div className="text-5xl mb-4">{info.icon}</div>
-
-          {/* Status text */}
-          <p className={`text-lg font-semibold mb-2 ${info.color}`}>
-            {info.text}
+      {/* Connected band — dark green when active, white card when not */}
+      {isConnected && displayJid ? (
+        <section className="dark-band mb-section">
+          <p className="mono-label text-on-dark/70 mb-3">Active device</p>
+          <h2 className="font-display text-product-display text-on-dark mb-4">
+            Linked to {displayJid}
+          </h2>
+          <p className="text-body-large text-on-dark/80 max-w-xl">
+            Inbound messages are forwarded to your configured backend. Outbound
+            replies route through this gateway.
           </p>
+        </section>
+      ) : (
+        <section className="bg-canvas border border-card-border rounded-md p-8 mb-section">
+          <div className="text-center max-w-md mx-auto">
+            {/* Status chip */}
+            <div className="inline-flex items-center gap-2 mb-6">
+              <span
+                className={`h-2 w-2 rounded-full ${TONE_DOT[info.tone]}`}
+              />
+              <span className="mono-label text-muted">{info.text}</span>
+            </div>
 
-          {/* Connected phone number */}
-          {status === "connected" && displayJid && (
-            <p className="text-gray-400 text-sm mb-4">
-              Linked to <span className="text-white font-mono">{displayJid}</span>
-            </p>
-          )}
-
-          {/* QR code */}
-          {status === "qr" && qrImage && (
-            <div className="my-6">
-              <div className="bg-white p-4 rounded-xl inline-block shadow-lg">
-                <img
-                  src={qrImage}
-                  alt="WhatsApp QR Code"
-                  className="w-80 h-80 md:w-96 md:h-96"
-                />
-                <p className="text-gray-400 text-xs mt-2">
-                  QR code refreshes every ~20 seconds. If scan fails, wait for the next one.
+            {/* QR code — hero-photo-card treatment */}
+            {status === "qr" && qrImage && (
+              <>
+                <div className="my-8 inline-block bg-canvas border border-card-border rounded-lg p-6 shadow-media-lift">
+                  <img
+                    src={qrImage}
+                    alt="WhatsApp QR Code"
+                    className="w-72 h-72 md:w-80 md:h-80"
+                  />
+                </div>
+                <p className="text-caption text-body-muted">
+                  The QR refreshes every ~20 seconds. If scan fails, wait for
+                  the next one.
                 </p>
+                <p className="mono-label text-muted mt-3">
+                  Open WhatsApp · Linked Devices · Link a Device
+                </p>
+              </>
+            )}
+
+            {/* Spinner states */}
+            {(status === "connecting" ||
+              (status === "disconnected" && !qrImage)) && (
+              <div className="my-8 flex justify-center">
+                <div className="h-12 w-12 rounded-full border-2 border-hairline border-t-primary animate-spin" />
               </div>
-              <p className="text-gray-500 text-xs mt-3">
-                Open WhatsApp → Settings → Linked Devices → Link a Device
+            )}
+
+            {status === "loggedOut" && (
+              <p className="text-caption text-body-muted mt-4">
+                The QR code should appear shortly. If it doesn't, restart the
+                app.
               </p>
-            </div>
-          )}
+            )}
+          </div>
+        </section>
+      )}
 
-          {/* Spinner during connecting */}
-          {status === "connecting" && (
-            <div className="my-6 flex justify-center">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-
-          {/* Logged out prompt */}
-          {status === "loggedOut" && (
-            <p className="text-gray-400 text-sm mt-2">
-              The QR code should appear shortly. If it doesn't, restart the app.
-            </p>
-          )}
-
-          {/* Disconnected / no QR yet */}
-          {status === "disconnected" && !qrImage && (
-            <div className="my-6 flex justify-center">
-              <div className="w-12 h-12 border-4 border-gray-600 border-t-gray-400 rounded-full animate-spin" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Help section */}
-      <div className="bg-gray-800/50 rounded-lg p-5 max-w-lg mx-auto mt-4 border border-gray-700/50">
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">
-          How linking works
-        </h3>
-        <ol className="text-gray-500 text-xs space-y-1.5 list-decimal list-inside">
-          <li>A QR code appears above when the gateway is ready</li>
-          <li>Open WhatsApp on your phone</li>
-          <li>Tap the menu (⋮) → Linked Devices → Link a Device</li>
-          <li>Scan the QR code shown above</li>
-          <li>
-            The gateway saves your session — you won't need to scan again
-          </li>
+      {/* Help section — rule-separated list, no boxing */}
+      <section className="border-t border-hairline pt-section">
+        <p className="mono-label text-muted mb-3">How linking works</p>
+        <ol className="divide-y divide-hairline border-y border-hairline">
+          <HelpRow n="1" title="A QR code appears above when the gateway is ready." />
+          <HelpRow n="2" title="Open WhatsApp on your phone." />
+          <HelpRow n="3" title="Tap the menu (⋮) → Linked Devices → Link a Device." />
+          <HelpRow n="4" title="Scan the QR code shown above." />
+          <HelpRow
+            n="5"
+            title="The gateway saves your session — you won't need to scan again."
+          />
         </ol>
-      </div>
+      </section>
     </div>
+  );
+}
+
+function HelpRow({ n, title }: { n: string; title: string }) {
+  return (
+    <li className="py-5 flex items-center gap-8">
+      <span className="font-mono text-mono-label text-muted w-6 shrink-0">
+        {n}
+      </span>
+      <span className="text-body-large text-ink">{title}</span>
+    </li>
   );
 }

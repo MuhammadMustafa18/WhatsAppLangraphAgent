@@ -47,68 +47,94 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-gray-800 p-8 rounded-lg w-96">
-        <h1 className="text-2xl font-bold mb-6 text-center">
-          {isRegister ? "Register" : "Login"}
-        </h1>
+    <div className="min-h-screen bg-canvas text-ink flex flex-col">
+      {/* Announcement bar — matches the authenticated nav so the brand reads
+          continuously before and after login. */}
+      <div className="h-9 bg-cohere-black text-on-dark flex items-center justify-center px-lg">
+        <span className="text-micro">
+          Alpha build · expect rough edges.
+        </span>
+      </div>
 
-        {error && (
-          <div className="bg-red-500/20 text-red-400 p-3 rounded mb-4 text-sm">
-            {error}
-          </div>
-        )}
+      <div className="flex-1 flex items-center justify-center px-lg">
+        <div className="w-full max-w-[420px] text-center">
+          {/* Tight display headline */}
+          <h1 className="font-display text-section-heading text-ink mb-4">
+            {isRegister ? "Create an account" : "Sign in"}
+          </h1>
+          <p className="text-body-large text-body-muted mb-12">
+            {isRegister
+              ? "Set up access to your WhatsApp command center."
+              : "Welcome back. Continue where you left off."}
+          </p>
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-400 text-sm mb-1">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+          {error && (
+            <div className="border border-error/30 bg-error/5 text-error px-4 py-3 mb-6 text-caption text-left rounded-sm">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="text-left">
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                Username
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                required
+                disabled={submitting}
+                autoComplete="username"
+              />
+            </div>
+
+            <div className="mb-8">
+              <label className="block text-caption text-ink mb-2">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                required
+                disabled={submitting}
+                autoComplete={isRegister ? "new-password" : "current-password"}
+                minLength={6}
+              />
+            </div>
+
+            <button
+              type="submit"
               disabled={submitting}
-              autoComplete="username"
-            />
-          </div>
+              className="btn-primary w-full"
+            >
+              {submitting
+                ? "Working…"
+                : isRegister
+                ? "Create account"
+                : "Sign in"}
+            </button>
+          </form>
 
-          <div className="mb-6">
-            <label className="block text-gray-400 text-sm mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+          <p className="text-caption text-body-muted mt-8">
+            {isRegister
+              ? "Already have an account?"
+              : "Don't have an account?"}{" "}
+            <button
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setError("");
+              }}
+              className="btn-secondary"
               disabled={submitting}
-              autoComplete={isRegister ? "new-password" : "current-password"}
-              minLength={6}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-medium disabled:opacity-50"
-          >
-            {submitting ? "Working..." : isRegister ? "Register" : "Login"}
-          </button>
-        </form>
-
-        <p className="text-gray-400 text-sm text-center mt-4">
-          {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-          <button
-            onClick={() => {
-              setIsRegister(!isRegister);
-              setError("");
-            }}
-            className="text-blue-400 hover:underline"
-            disabled={submitting}
-          >
-            {isRegister ? "Login" : "Register"}
-          </button>
-        </p>
+            >
+              {isRegister ? "Sign in" : "Create one"}
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );

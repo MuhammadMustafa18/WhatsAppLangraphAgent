@@ -176,30 +176,36 @@ export default function Providers() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Providers</h1>
-        <button
-          onClick={openCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-        >
-          Add Provider
+      {/* Header */}
+      <div className="mb-section flex items-end justify-between gap-8">
+        <div>
+          <p className="mono-label text-muted mb-3">Models</p>
+          <h1 className="font-display text-section-heading text-ink">
+            Providers
+          </h1>
+          <p className="text-body-large text-body-muted max-w-xl mt-3">
+            LLM backends the bot can call. Mark one as default for new sessions.
+          </p>
+        </div>
+        <button onClick={openCreate} className="btn-primary shrink-0">
+          Add provider
         </button>
       </div>
 
       {savedPlainKey && (
-        <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-200 p-4 rounded mb-4">
-          <div className="flex items-start justify-between">
+        <div className="mb-8 border border-coral/40 bg-coral/10 text-ink px-6 py-4 rounded-sm">
+          <div className="flex items-start justify-between gap-6">
             <div>
-              <p className="font-bold mb-1">
+              <p className="font-medium mb-2">
                 Save this API key now — it won't be shown again.
               </p>
-              <p className="font-mono text-sm break-all">
+              <p className="font-mono text-mono-label text-ink break-all bg-canvas border border-card-border px-3 py-2 rounded-xs">
                 {savedPlainKey.api_key_plain}
               </p>
             </div>
             <button
               onClick={() => setSavedPlainKey(null)}
-              className="text-yellow-200 hover:text-white ml-4"
+              className="btn-secondary shrink-0"
             >
               Dismiss
             </button>
@@ -208,17 +214,17 @@ export default function Providers() {
       )}
 
       {error && (
-        <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded mb-4 text-sm">
+        <div className="mb-8 border border-error/30 bg-error/5 text-error px-4 py-3 text-caption rounded-sm">
           {error}
         </div>
       )}
 
       {validationResult && (
         <div
-          className={`p-3 rounded mb-4 text-sm border ${
+          className={`mb-8 px-4 py-3 text-caption border rounded-sm ${
             validationResult.valid
-              ? "bg-green-500/20 border-green-500 text-green-200"
-              : "bg-red-500/20 border-red-500 text-red-200"
+              ? "border-deep-green/30 bg-pale-green text-ink"
+              : "border-error/30 bg-error/5 text-error"
           }`}
         >
           {validationResult.valid
@@ -234,74 +240,70 @@ export default function Providers() {
       )}
 
       {loading ? (
-        <div className="text-gray-400">Loading...</div>
+        <p className="text-body-muted">Loading…</p>
       ) : providers.length === 0 ? (
-        <div className="bg-gray-800 p-8 rounded-lg text-center">
-          <p className="text-gray-400 mb-4">
+        <section className="product-card text-center">
+          <p className="text-body-large text-ink mb-6 max-w-md mx-auto">
             No providers configured yet. Add your first LLM provider to start
             chatting.
           </p>
-          <button
-            onClick={openCreate}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-          >
-            Add Provider
+          <button onClick={openCreate} className="btn-primary">
+            Add provider
           </button>
-        </div>
+        </section>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {providers.map((p) => (
-            <div key={p.id} className="bg-gray-800 p-4 rounded-lg">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-lg font-bold">{p.name}</h3>
-                    {p.is_default && (
-                      <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded">
-                        DEFAULT
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-400 text-sm">
-                    {p.type} · {p.model}
-                    {p.base_url && ` · ${p.base_url}`}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-1">
-                    Key: <span className="font-mono">{p.api_key_masked}</span> ·
-                    Max tokens: {p.max_tokens}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  {!p.is_default && (
-                    <button
-                      onClick={() => handleSetDefault(p)}
-                      className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded"
-                    >
-                      Set Default
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleValidate(p)}
-                    disabled={validatingId === p.id}
-                    className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded disabled:opacity-50"
-                  >
-                    {validatingId === p.id ? "Checking..." : "Validate"}
-                  </button>
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p)}
-                    className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded"
-                  >
-                    Delete
-                  </button>
-                </div>
+            <article key={p.id} className="product-card flex flex-col">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <h3 className="font-display text-feature-heading text-ink">
+                  {p.name}
+                </h3>
+                {p.is_default && (
+                  <span className="mono-label bg-primary text-on-dark px-2 py-0.5 rounded-xs shrink-0">
+                    Default
+                  </span>
+                )}
               </div>
-            </div>
+              <p className="mono-label text-muted mb-4">
+                {p.type} · {p.model}
+                {p.base_url && ` · ${p.base_url}`}
+              </p>
+              <hr className="mb-4" />
+              <p className="text-caption text-body-muted mb-6">
+                <span className="font-mono">{p.api_key_masked}</span> · max{" "}
+                {p.max_tokens.toLocaleString()} tokens
+              </p>
+              <div className="mt-auto flex flex-wrap gap-2">
+                {!p.is_default && (
+                  <button
+                    onClick={() => handleSetDefault(p)}
+                    className="btn-pill-outline"
+                  >
+                    Set default
+                  </button>
+                )}
+                <button
+                  onClick={() => handleValidate(p)}
+                  disabled={validatingId === p.id}
+                  className="btn-pill-outline disabled:opacity-50"
+                >
+                  {validatingId === p.id ? "Checking…" : "Validate"}
+                </button>
+                <button
+                  onClick={() => openEdit(p)}
+                  className="btn-pill-outline"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(p)}
+                  className="btn-pill-outline hover:border-error hover:text-error"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -312,26 +314,26 @@ export default function Providers() {
           onClose={closeModal}
         >
           <form onSubmit={handleSubmit}>
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">Name</label>
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">Name</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
                 required
                 maxLength={100}
               />
             </div>
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">Type</label>
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">Type</label>
               <select
                 value={form.type}
                 onChange={(e) =>
                   setForm({ ...form, type: e.target.value as ProviderType })
                 }
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
               >
                 {PROVIDER_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -342,8 +344,8 @@ export default function Providers() {
             </div>
 
             {form.type === "custom" && (
-              <div className="mb-3">
-                <label className="block text-gray-400 text-sm mb-1">
+              <div className="mb-4">
+                <label className="block text-caption text-ink mb-2">
                   Base URL
                 </label>
                 <input
@@ -353,16 +355,17 @@ export default function Providers() {
                     setForm({ ...form, base_url: e.target.value })
                   }
                   placeholder="http://localhost:11434/v1"
-                  className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
                   required
                 />
               </div>
             )}
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">
-                API Key {mode.kind === "edit" && (
-                  <span className="text-gray-500">
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                API Key{" "}
+                {mode.kind === "edit" && (
+                  <span className="text-body-muted">
                     (leave blank to keep current)
                   </span>
                 )}
@@ -373,27 +376,27 @@ export default function Providers() {
                 onChange={(e) =>
                   setForm({ ...form, api_key: e.target.value })
                 }
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
                 required={mode.kind === "create"}
                 autoComplete="off"
               />
             </div>
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">Model</label>
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">Model</label>
               <input
                 type="text"
                 value={form.model}
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
                 placeholder="gpt-4o"
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
                 required
                 maxLength={100}
               />
             </div>
 
-            <div className="mb-4">
-              <label className="block text-gray-400 text-sm mb-1">
+            <div className="mb-6">
+              <label className="block text-caption text-ink mb-2">
                 Max tokens
               </label>
               <input
@@ -404,31 +407,31 @@ export default function Providers() {
                 }
                 min={1}
                 max={32000}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
               />
             </div>
 
             {error && (
-              <div className="bg-red-500/20 text-red-300 p-2 rounded mb-3 text-sm">
+              <div className="mb-4 border border-error/30 bg-error/5 text-error px-3 py-2 text-caption rounded-sm">
                 {error}
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={closeModal}
-                className="px-4 py-2 rounded text-gray-300 hover:text-white"
+                className="btn-secondary"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50"
+                className="btn-primary disabled:opacity-50"
               >
                 {submitting
-                  ? "Saving..."
+                  ? "Saving…"
                   : mode.kind === "create"
                     ? "Create"
                     : "Save"}

@@ -15,24 +15,24 @@ export default function LoadingScreen({
   const hasError = error != null || Object.values(services).some((s) => s.status === "error");
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-gray-900">
-      <div className="w-72 text-center">
+    <div className="flex h-screen w-screen items-center justify-center bg-canvas">
+      <div className="w-[320px] text-center">
         <div
-          className={`mx-auto mb-6 h-7 w-7 rounded-full border-4 border-gray-700 border-t-blue-500 ${
+          className={`mx-auto mb-8 h-7 w-7 rounded-full border-2 border-hairline border-t-primary ${
             allOk ? "" : "animate-spin"
           }`}
         />
 
-        <p className="mb-4 text-sm font-medium text-gray-200">
-          {hasError ? "Couldn't start the app" : "Starting up…"}
+        <p className="mono-label text-muted mb-8">
+          {hasError ? "Couldn't start the app" : "Starting up"}
         </p>
 
-        <ul className="space-y-1.5 text-left">
+        <ul className="space-y-3 text-left">
           {(Object.entries(services) as [SidecarId, { label: string; status: SidecarStatus }][]).map(
             ([id, svc]) => (
-              <li key={id} className="flex items-center gap-2 text-xs text-gray-400">
+              <li key={id} className="flex items-center gap-3 text-caption">
                 <StatusDot status={svc.status} />
-                <span className={svc.status === "ok" ? "text-gray-300" : ""}>
+                <span className={svc.status === "ok" ? "text-ink" : "text-body-muted"}>
                   {svc.label}
                 </span>
               </li>
@@ -41,13 +41,12 @@ export default function LoadingScreen({
         </ul>
 
         {hasError && (
-          <div className="mt-5">
-            {error && <p className="mb-3 text-xs text-gray-500">{error}</p>}
+          <div className="mt-10">
+            {error && (
+              <p className="mb-4 text-caption text-body-muted">{error}</p>
+            )}
             {onRetry && (
-              <button
-                onClick={onRetry}
-                className="rounded-md border border-gray-700 px-3 py-1.5 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white"
-              >
+              <button onClick={onRetry} className="btn-primary">
                 Retry
               </button>
             )}
@@ -62,7 +61,7 @@ function StatusDot({ status }: { status: SidecarStatus }) {
   if (status === "ok") {
     return (
       <svg
-        className="h-3.5 w-3.5 text-emerald-400"
+        className="h-4 w-4 text-deep-green"
         viewBox="0 0 20 20"
         fill="currentColor"
         aria-hidden
@@ -76,11 +75,11 @@ function StatusDot({ status }: { status: SidecarStatus }) {
     );
   }
   if (status === "error") {
-    return <span className="h-2 w-2 rounded-full bg-red-400" aria-hidden />;
+    return <span className="h-2 w-2 rounded-full bg-error" aria-hidden />;
   }
   return (
     <span
-      className="h-2 w-2 animate-pulse rounded-full bg-gray-600"
+      className="h-2 w-2 animate-pulse rounded-full bg-muted"
       aria-hidden
     />
   );

@@ -1,8 +1,81 @@
+/* Cohere design system fallbacks — fonts shipped offline via @fontsource */
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+@layer base {
+  html {
+    /* Cohere defaults to a generous type ramp on desktop */
+    font-family: theme("fontFamily.sans");
+    color: theme("colors.ink");
+    background-color: theme("colors.canvas");
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background-color: theme("colors.canvas");
+    color: theme("colors.ink");
+  }
+
+  /* Cohere type split: display headings stay tight and tracked-in */
+  h1,
+  h2,
+  h3 {
+    font-family: theme("fontFamily.display");
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  /* Inputs use the violet form-focus ring per Cohere */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid theme("colors.form-focus");
+    outline-offset: 1px;
+  }
+
+  /* Cohere uses hairline (#d9d9dd) as the standard rule */
+  hr {
+    border-color: theme("colors.hairline");
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-pill bg-primary text-on-primary font-sans font-medium text-button px-6 py-3 transition hover:bg-cohere-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-blue disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center text-ink font-sans text-body underline underline-offset-4 decoration-1 hover:decoration-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-blue;
+  }
+
+  .btn-pill-outline {
+    @apply inline-flex items-center justify-center rounded-xl border border-primary bg-transparent text-primary font-sans font-medium text-button px-3 py-1.5 transition hover:bg-soft-stone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-blue;
+  }
+
+  .surface-card {
+    @apply bg-canvas border border-card-border rounded-md;
+  }
+
+  .product-card {
+    @apply bg-soft-stone text-ink rounded-sm p-8;
+  }
+
+  .dark-band {
+    @apply bg-deep-green text-on-dark rounded-lg p-section;
+  }
+
+  .mono-label {
+    @apply font-mono text-mono-label uppercase;
+  }
 }

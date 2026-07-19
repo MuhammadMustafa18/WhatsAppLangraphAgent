@@ -149,94 +149,91 @@ export default function Personas() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="mb-section flex items-end justify-between gap-8">
         <div>
-          <h1 className="text-2xl font-bold">Personas</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            How your bot answers. Each persona is a system prompt + optional
-            knowledge base + optional model pin.
+          <p className="mono-label text-muted mb-3">Behavior</p>
+          <h1 className="font-display text-section-heading text-ink">
+            Personas
+          </h1>
+          <p className="text-body-large text-body-muted max-w-xl mt-3">
+            How your bot answers. Each persona is a system prompt plus an
+            optional knowledge base and optional model pin.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-        >
-          Add Persona
+        <button onClick={openCreate} className="btn-primary shrink-0">
+          Add persona
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded mb-4 text-sm">
+        <div className="mb-8 border border-error/30 bg-error/5 text-error px-4 py-3 text-caption rounded-sm">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="text-gray-400">Loading...</div>
+        <p className="text-body-muted">Loading…</p>
       ) : personas.length === 0 ? (
-        <div className="bg-gray-800 p-8 rounded-lg text-center">
-          <p className="text-gray-400 mb-4">
-            No personas yet. Create one — start with a name and a system prompt
-            that tells the bot how to behave.
+        <section className="product-card text-center">
+          <p className="text-body-large text-ink mb-6 max-w-md mx-auto">
+            No personas yet. Create one — start with a name and a system
+            prompt that tells the bot how to behave.
           </p>
-          <button
-            onClick={openCreate}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-          >
-            Add Persona
+          <button onClick={openCreate} className="btn-primary">
+            Add persona
           </button>
-        </div>
+        </section>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4 md:grid-cols-2">
           {personas.map((p) => (
-            <div key={p.id} className="bg-gray-800 p-4 rounded-lg">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-lg font-bold">{p.name}</h3>
-                    {p.is_active ? (
-                      <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded">
-                        ACTIVE
-                      </span>
-                    ) : (
-                      <span className="bg-gray-600 text-white text-xs px-2 py-0.5 rounded">
-                        INACTIVE
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-300 text-sm whitespace-pre-wrap break-words mb-2">
-                    {p.system_prompt}
-                  </p>
-                  {p.knowledge_base && (
-                    <details className="mb-2">
-                      <summary className="text-gray-400 text-xs cursor-pointer">
-                        Knowledge base
-                      </summary>
-                      <p className="text-gray-400 text-xs mt-1 whitespace-pre-wrap break-words">
-                        {p.knowledge_base}
-                      </p>
-                    </details>
-                  )}
-                  <p className="text-gray-500 text-xs">
-                    Model: <span className="font-mono">{providerName(p.model_override)}</span>
-                  </p>
-                </div>
-                <div className="flex gap-2 ml-4">
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1 rounded"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p)}
-                    className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded"
-                  >
-                    Delete
-                  </button>
-                </div>
+            <article key={p.id} className="product-card flex flex-col">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <h3 className="font-display text-feature-heading text-ink">
+                  {p.name}
+                </h3>
+                {p.is_active ? (
+                  <span className="mono-label bg-deep-green text-on-dark px-2 py-0.5 rounded-xs shrink-0">
+                    Active
+                  </span>
+                ) : (
+                  <span className="mono-label bg-muted text-canvas px-2 py-0.5 rounded-xs shrink-0">
+                    Inactive
+                  </span>
+                )}
               </div>
-            </div>
+              <p className="text-body text-ink whitespace-pre-wrap break-words mb-4">
+                {p.system_prompt}
+              </p>
+              {p.knowledge_base && (
+                <details className="mb-4">
+                  <summary className="mono-label text-muted cursor-pointer">
+                    Knowledge base
+                  </summary>
+                  <p className="text-caption text-body-muted mt-2 whitespace-pre-wrap break-words">
+                    {p.knowledge_base}
+                  </p>
+                </details>
+              )}
+              <hr className="mb-4" />
+              <p className="text-caption text-body-muted mb-6">
+                Model: <span className="font-mono">{providerName(p.model_override)}</span>
+              </p>
+              <div className="mt-auto flex gap-2">
+                <button
+                  onClick={() => openEdit(p)}
+                  className="btn-pill-outline"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(p)}
+                  className="btn-pill-outline hover:border-error hover:text-error"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -248,68 +245,68 @@ export default function Personas() {
           maxWidth="max-w-2xl"
         >
           <form onSubmit={handleSubmit}>
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">
-                Name
-                <span className="text-gray-500 text-xs ml-2">
-                  (use lowercase: resume, services, booking, etc.)
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                Name{" "}
+                <span className="text-body-muted">
+                  (lowercase: resume, services, booking…)
                 </span>
               </label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
                 required
                 maxLength={100}
                 placeholder="support"
               />
             </div>
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">
-                System prompt
-                <span className="text-gray-500 text-xs ml-2">
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                System prompt{" "}
+                <span className="text-body-muted">
                   (who the bot is, how it talks, what to focus on)
                 </span>
               </label>
               <textarea
                 value={form.system_prompt}
                 onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus font-mono text-caption"
                 required
                 rows={6}
                 placeholder="You are a support agent for a small ecommerce store. Be brief, friendly, and always ask for the order number before looking anything up."
               />
             </div>
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">
-                Knowledge base
-                <span className="text-gray-500 text-xs ml-2">
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                Knowledge base{" "}
+                <span className="text-body-muted">
                   (optional reference text, appended to the system prompt)
                 </span>
               </label>
               <textarea
                 value={form.knowledge_base}
                 onChange={(e) => setForm({ ...form, knowledge_base: e.target.value })}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus font-mono text-caption"
                 rows={4}
                 placeholder="FAQ: returns within 30 days. Shipping is free over $50. Customer support hours are 9am-5pm EST."
               />
             </div>
 
-            <div className="mb-3">
-              <label className="block text-gray-400 text-sm mb-1">
-                Model override
-                <span className="text-gray-500 text-xs ml-2">
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                Model override{" "}
+                <span className="text-body-muted">
                   (optional — leave blank to use your default provider)
                 </span>
               </label>
               <select
                 value={form.model_override}
                 onChange={(e) => setForm({ ...form, model_override: e.target.value })}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
               >
                 <option value="">— Default provider —</option>
                 {providers.map((p) => (
@@ -319,48 +316,48 @@ export default function Personas() {
                 ))}
               </select>
               {providers.length === 0 && (
-                <p className="text-gray-500 text-xs mt-1">
+                <p className="text-caption text-body-muted mt-2">
                   No providers configured yet.{" "}
-                  <a href="/providers" className="text-blue-400 hover:underline">
-                    Add one first.
+                  <a href="/providers" className="btn-secondary inline-flex">
+                    Add one first
                   </a>
                 </p>
               )}
             </div>
 
-            <div className="mb-4">
-              <label className="flex items-center gap-2 text-gray-400 text-sm">
+            <div className="mb-6">
+              <label className="flex items-center gap-3 text-caption text-ink">
                 <input
                   type="checkbox"
                   checked={form.is_active}
                   onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                  className="rounded"
+                  className="rounded-xs border-border-light"
                 />
                 Active (inactive personas are ignored by the bot)
               </label>
             </div>
 
             {error && (
-              <div className="bg-red-500/20 text-red-300 p-2 rounded mb-3 text-sm">
+              <div className="mb-4 border border-error/30 bg-error/5 text-error px-3 py-2 text-caption rounded-sm">
                 {error}
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={closeModal}
-                className="px-4 py-2 rounded text-gray-300 hover:text-white"
+                className="btn-secondary"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50"
+                className="btn-primary disabled:opacity-50"
               >
                 {submitting
-                  ? "Saving..."
+                  ? "Saving…"
                   : mode.kind === "create"
                     ? "Create"
                     : "Save"}

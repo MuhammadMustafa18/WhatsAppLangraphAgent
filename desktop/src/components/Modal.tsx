@@ -26,18 +26,18 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-cohere-black/40 flex items-center justify-center z-50 px-4"
       onClick={onClose}
     >
       <div
-        className={`bg-gray-800 rounded-lg p-6 w-full ${maxWidth} mx-4 shadow-xl`}
+        className={`bg-canvas rounded-lg border border-card-border p-8 w-full ${maxWidth}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">{title}</h2>
+        <div className="flex items-start justify-between mb-6 gap-6">
+          <h2 className="text-card-heading text-ink">{title}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl leading-none"
+            className="text-muted hover:text-ink text-2xl leading-none -mt-1"
             aria-label="Close"
           >
             ×

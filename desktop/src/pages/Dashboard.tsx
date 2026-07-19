@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { listProviders } from "../api/providers";
 import { listPersonas } from "../api/personas";
 import { useWhatsAppStore } from "../stores/whatsapp";
@@ -50,14 +51,14 @@ export default function Dashboard() {
 
   const ready = !counts.loading && counts.providers > 0 && counts.personas > 0;
 
-  // WhatsApp connection status dot
-  const waDot = !sidecarOnline
-    ? "bg-gray-500"
+  // WhatsApp connection state → chip color
+  const waTone = !sidecarOnline
+    ? "muted"
     : waStatus === "connected"
-      ? "bg-green-500"
+      ? "deep-green"
       : waStatus === "qr" || waStatus === "connecting"
-        ? "bg-yellow-500"
-        : "bg-red-500";
+        ? "coral"
+        : "error";
 
   const waLabel = !sidecarOnline
     ? "Offline"
@@ -66,8 +67,15 @@ export default function Dashboard() {
       : waStatus === "qr"
         ? "Scan QR"
         : waStatus === "connecting"
-          ? "Connecting..."
+          ? "Connecting"
           : "Disconnected";
+
+  const dotClass = {
+    muted: "bg-muted",
+    "deep-green": "bg-deep-green",
+    coral: "bg-coral",
+    error: "bg-error",
+  }[waTone];
 
   const displayJid = jid
     ? jid.replace(/@.*$/, "").replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, "+$1 $2 $3 $4")
@@ -75,92 +83,158 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+      {/* Hero declaration — Cohere opens on a tight display headline */}
+      <div className="mb-section">
+        <p className="mono-label text-muted mb-3">Overview</p>
+        <h1 className="font-display text-section-heading text-ink mb-4">
+          Your WhatsApp command center
+        </h1>
+        <p className="text-body-large text-body-muted max-w-2xl">
+          Connect an LLM provider, define a persona, and link WhatsApp. The bot
+          replies on your behalf using the slash-prefixed persona of your
+          choice.
+        </p>
+      </div>
 
       {counts.error && (
-        <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded mb-4 text-sm">
+        <div className="border border-error/30 bg-error/5 text-error px-4 py-3 mb-8 text-caption rounded-sm">
           {counts.error}
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-gray-400 text-sm">Providers</h2>
-          <p className="text-3xl font-bold">
-            {counts.loading ? "—" : counts.providers}
-          </p>
-          <a href="/providers" className="text-blue-400 text-sm hover:underline">
-            {counts.providers === 0 ? "Add one →" : "Manage →"}
-          </a>
-        </div>
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-gray-400 text-sm">Personas</h2>
-          <p className="text-3xl font-bold">
-            {counts.loading ? "—" : counts.personas}
-          </p>
-          <a href="/personas" className="text-blue-400 text-sm hover:underline">
-            {counts.personas === 0 ? "Add one →" : "Manage →"}
-          </a>
-        </div>
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2.5 h-2.5 rounded-full ${waDot}`} />
-            <h2 className="text-gray-400 text-sm">WhatsApp</h2>
+      {/* Capability-card grid — 3 columns on desktop, 1 on mobile */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-section">
+        <CapabilityCard
+          label="Providers"
+          value={counts.loading ? "—" : counts.providers}
+          cta={counts.providers === 0 ? "Add one" : "Manage"}
+          ctaHref="/providers"
+        />
+        <CapabilityCard
+          label="Personas"
+          value={counts.loading ? "—" : counts.personas}
+          cta={counts.personas === 0 ? "Create one" : "Manage"}
+          ctaHref="/personas"
+        />
+
+        <div className="bg-canvas border border-card-border rounded-md p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`h-2 w-2 rounded-full ${dotClass}`} />
+            <p className="mono-label text-muted">WhatsApp</p>
           </div>
-          <p className="text-3xl font-bold">{waLabel}</p>
+          <p className="font-display text-section-heading text-ink">
+            {waLabel}
+          </p>
           {displayJid && (
-            <p className="text-gray-500 text-xs mt-1 font-mono">{displayJid}</p>
+            <p className="font-mono text-mono-label text-muted mt-3">
+              {displayJid}
+            </p>
           )}
-          <a href="/connections" className="text-blue-400 text-sm hover:underline">
-            {waStatus === "connected" ? "Details →" : "Connect →"}
-          </a>
+          <Link
+            to="/connections"
+            className="btn-secondary mt-6 inline-flex"
+          >
+            {waStatus === "connected" ? "Manage connection" : "Connect now"}
+          </Link>
         </div>
       </div>
 
+      {/* Setup checklist — only when something is missing */}
       {!counts.loading && !ready && (
-        <div className="bg-gray-800 p-6 rounded-lg border border-yellow-600/40">
-          <h2 className="text-lg font-bold mb-2">Setup checklist</h2>
-          <ul className="text-gray-300 text-sm space-y-1">
+        <section className="border-t border-hairline pt-section">
+          <p className="mono-label text-muted mb-3">Setup</p>
+          <h2 className="font-display text-card-heading text-ink mb-6">
+            A few things to wire up
+          </h2>
+          <ul className="divide-y divide-hairline border-y border-hairline">
             {counts.providers === 0 && (
-              <li>
-                ☐ Add an LLM provider (OpenAI, Anthropic, or OpenAI-compatible).
-                <a href="/providers" className="text-blue-400 hover:underline ml-2">
-                  Providers →
-                </a>
-              </li>
+              <SetupRow
+                title="Add an LLM provider"
+                body="OpenAI, Anthropic, or any OpenAI-compatible endpoint."
+                cta="Providers"
+                ctaHref="/providers"
+              />
             )}
             {counts.personas === 0 && (
-              <li>
-                ☐ Create at least one persona (system prompt + optional knowledge
-                base).
-                <a href="/personas" className="text-blue-400 hover:underline ml-2">
-                  Personas →
-                </a>
-              </li>
+              <SetupRow
+                title="Create at least one persona"
+                body="System prompt plus an optional knowledge base."
+                cta="Personas"
+                ctaHref="/personas"
+              />
             )}
-            <li>
-              ☐{' '}
-              <a href="/connections" className="text-blue-400 hover:underline">
-                Connect WhatsApp
-              </a>
-              {" "}— scan the QR code in the Connections page.
-            </li>
+            <SetupRow
+              title="Link your WhatsApp device"
+              body="Scan the QR code from the Connections page."
+              cta="Connections"
+              ctaHref="/connections"
+            />
           </ul>
-        </div>
+        </section>
       )}
 
+      {/* Ready band — full-width dark green when everything is wired */}
       {ready && (
-        <div className="bg-gray-800 p-6 rounded-lg border border-green-600/40">
-          <h2 className="text-lg font-bold mb-2 text-green-300">Ready</h2>
-          <p className="text-gray-300 text-sm">
-            Bot is configured. Send a WhatsApp message to your connected number
-            — the bot will reply using your default persona. Use slash prefixes
-            (<code className="bg-gray-700 px-1 rounded">/support</code>,{" "}
-            <code className="bg-gray-700 px-1 rounded">/booking</code>, etc.) to
-            switch personas on the fly.
+        <section className="dark-band mt-section">
+          <p className="mono-label text-on-dark/70 mb-3">Live</p>
+          <h2 className="font-display text-card-heading text-on-dark mb-3">
+            You're ready to receive messages.
+          </h2>
+          <p className="text-body-large text-on-dark/80 max-w-2xl">
+            Send a WhatsApp message to your connected number — the bot will
+            reply using your default persona. Use slash prefixes
+            (<code className="font-mono text-mono-label bg-cohere-black/40 px-2 py-0.5 rounded-xs">/support</code>,{" "}
+            <code className="font-mono text-mono-label bg-cohere-black/40 px-2 py-0.5 rounded-xs">/booking</code>, …)
+            to switch personas on the fly.
           </p>
-        </div>
+        </section>
       )}
     </div>
+  );
+}
+
+function CapabilityCard({
+  label,
+  value,
+  cta,
+  ctaHref,
+}: {
+  label: string;
+  value: number | string;
+  cta: string;
+  ctaHref: string;
+}) {
+  return (
+    <div className="bg-canvas border border-card-border rounded-md p-6">
+      <p className="mono-label text-muted mb-3">{label}</p>
+      <p className="font-display text-section-heading text-ink">{value}</p>
+      <Link to={ctaHref} className="btn-secondary mt-6 inline-flex">
+        {cta}
+      </Link>
+    </div>
+  );
+}
+
+function SetupRow({
+  title,
+  body,
+  cta,
+  ctaHref,
+}: {
+  title: string;
+  body: string;
+  cta: string;
+  ctaHref: string;
+}) {
+  return (
+    <li className="py-6 flex items-center gap-8">
+      <div className="flex-1">
+        <p className="text-card-heading text-ink mb-1">{title}</p>
+        <p className="text-caption text-body-muted">{body}</p>
+      </div>
+      <Link to={ctaHref} className="btn-pill-outline shrink-0">
+        {cta}
+      </Link>
+    </li>
   );
 }
