@@ -3,6 +3,7 @@
  *
  * Spawned by Tauri alongside uvicorn. Provides:
  *   - HTTP POST /send-text   — Python backend calls this to send replies
+ *   - HTTP POST /logout      — React UI calls this to unlink the device
  *   - HTTP GET  /health      — Tauri health-check
  *   - WebSocket /events      — React UI connects for QR codes + connection status
  *
@@ -18,6 +19,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Boom } from "@hapi/boom";
 import QRCode from "qrcode";
 import pino from "pino";
+import { rm } from "fs/promises";
 
 // ── Config ──────────────────────────────────────────────────────────────
 
@@ -42,6 +44,7 @@ let connectionStatus: ConnectionStatus = "disconnected";
 let qrCodeData: string | null = null;
 let wsClients: Set<WebSocket> = new Set();
 let sock: ReturnType<typeof makeWASocket>;
+let sockGeneration = 0;
 
 // ── Broadcast ───────────────────────────────────────────────────────────
 
@@ -60,9 +63,20 @@ function generateQR(qrString: string): string {
   return QRCode.toDataURL(qrString, { width: 600, margin: 4, color: { dark: "#000", light: "#FFF" } });
 }
 
+// Wipe saved creds so the next startSocket() produces a fresh QR instead of
+// silently re-using the old session. Silent on missing dir.
+async function clearAuthDir() {
+  try {
+    await rm(AUTH_DIR, { recursive: true, force: true });
+  } catch (err) {
+    console.warn("[baileys] failed to clear auth dir:", err);
+  }
+}
+
 // ── WhatsApp socket lifecycle ───────────────────────────────────────────
 
 async function startSocket() {
+  const gen = ++sockGeneration;
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
   const { version } = await fetchLatestWaWebVersion();
@@ -78,6 +92,7 @@ async function startSocket() {
   sock = newSock;
 
   newSock.ev.on("connection.update", async (update) => {
+    if (gen !== sockGeneration) return;
     const { connection, lastDisconnect, qr } = update;
 
     console.log("[baileys] connection.update:", JSON.stringify({ connection, hasQr: !!qr, hasError: !!lastDisconnect?.error }));
@@ -114,8 +129,10 @@ async function startSocket() {
           : 0;
 
         if (reason === DisconnectReason.loggedOut) {
-          console.log("[baileys] Logged out — QR scan needed");
+          console.log("[baileys] Logged out — clearing creds and restarting for fresh QR");
           broadcast("status", { status: "loggedOut" });
+          await clearAuthDir();
+          setTimeout(() => startSocket(), 1000);
           return;
         }
 
@@ -127,6 +144,7 @@ async function startSocket() {
   });
 
   newSock.ev.on("messages.upsert", async ({ messages, type }) => {
+    if (gen !== sockGeneration) return;
     if (type !== "notify") return;
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
@@ -169,13 +187,29 @@ async function startSocket() {
     }
   });
 
-  newSock.ev.on("creds.update", saveCreds);
+  newSock.ev.on("creds.update", () => {
+    if (gen !== sockGeneration) return;
+    saveCreds();
+  });
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
 
 async function main() {
   const app = express();
+
+  // The sidecar is reached from the Tauri WebView (origin varies in dev/prod)
+  // and from the Python backend. Allow any origin — there's no auth at this
+  // layer; the Tauri process is the security boundary.
+  app.use((_req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    next();
+  });
+  // Short-circuit CORS preflight without passing to handlers.
+  app.options(/.*/, (_req, res) => res.sendStatus(204));
+
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
@@ -202,6 +236,39 @@ async function main() {
       console.error("[baileys] send failed:", err);
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  app.post("/logout", async (_req, res) => {
+    // Baileys reports the open connection as "open", not "connected". The
+    // typed union still uses "connected" as the conceptual name, but the
+    // value we store at runtime is "open" — match it here.
+    if (!sock || connectionStatus !== "open") {
+      res.json({ status: "no-op", current: connectionStatus });
+      return;
+    }
+
+    const oldSock = sock;
+    qrCodeData = null;
+    connectionStatus = "disconnected";
+    broadcast("status", { status: "loggedOut" });
+    console.log("[baileys] logout requested — unlinking device");
+
+    // Best-effort: tell WhatsApp to unlink the device server-side.
+    try {
+      await oldSock.logout();
+    } catch (err) {
+      console.error("[baileys] logout() network error:", err);
+    }
+
+    // Force-close with loggedOut reason so the connection.update handler
+    // fires the loggedOut branch → clearAuthDir() + startSocket().
+    // If logout() already closed the socket, this is a no-op (closed flag).
+    oldSock.end(new Boom("Logout requested", { statusCode: DisconnectReason.loggedOut }));
+
+    // Ensure auth files are gone regardless of which path ran.
+    await clearAuthDir();
+
+    res.json({ status: "loggedOut" });
   });
 
   app.get("/status", (_req, res) => {

@@ -1,5 +1,9 @@
+import { useState } from "react";
 import { useBaileysWebSocket } from "../hooks/useBaileysWS";
 import { useWhatsAppStore, ConnectionStatus } from "../stores/whatsapp";
+
+// Direct to Baileys sidecar (port 2786), not via the FastAPI backend (18234).
+const BAILEYS_URL = "http://127.0.0.1:2786";
 
 const STATUS_LABELS: Record<ConnectionStatus, { text: string; color: string; icon: string }> = {
   disconnected: {
@@ -33,8 +37,33 @@ export default function Connections() {
   // This hook handles the WebSocket connection lifecycle internally
   useBaileysWebSocket();
 
-  const { status, qrImage, jid, sidecarOnline } = useWhatsAppStore();
+  const { status, qrImage, jid, sidecarOnline, reset } = useWhatsAppStore();
   const info = STATUS_LABELS[status];
+
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    setLogoutError(null);
+    try {
+      const res = await fetch(`${BAILEYS_URL}/logout`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      // Optimistically clear local state — the WS will also push "loggedOut"
+      // and a fresh QR, but resetting here avoids a stale "Connected" flicker.
+      reset();
+    } catch (err) {
+      setLogoutError(
+        err instanceof Error ? err.message : "Couldn't reach the WhatsApp gateway.",
+      );
+    } finally {
+      setLoggingOut(false);
+      setConfirming(false);
+    }
+  }
 
   // Format JID for display (e.g. "92317...@s.whatsapp.net" → "+92 317 XXX XXXX")
   const displayJid = jid
@@ -45,7 +74,45 @@ export default function Connections() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">WhatsApp Connection</h1>
+
+        {status === "connected" && !confirming && (
+          <button
+            onClick={() => {
+              setLogoutError(null);
+              setConfirming(true);
+            }}
+            className="rounded-md border border-gray-700 px-3 py-1.5 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-400"
+          >
+            Logout
+          </button>
+        )}
+
+        {status === "connected" && confirming && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">Unlink this device?</span>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={loggingOut}
+              className="rounded-md border border-gray-700 px-3 py-1.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+            >
+              {loggingOut ? "Logging out…" : "Confirm"}
+            </button>
+          </div>
+        )}
       </div>
+
+      {logoutError && (
+        <div className="mb-4 max-w-lg rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          Logout failed: {logoutError}
+        </div>
+      )}
 
       {/* Sidecar status bar */}
       <div

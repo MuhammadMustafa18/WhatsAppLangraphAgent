@@ -61,7 +61,6 @@ export function useBaileysWebSocket() {
       };
 
       ws.onclose = () => {
-        setSidecarOnline(false);
         wsRef.current = null;
 
         // Auto-reconnect with exponential backoff (max 30s)
@@ -76,24 +75,35 @@ export function useBaileysWebSocket() {
       };
     }
 
-    // Fetch initial status from HTTP endpoint (faster than waiting for WS)
-    fetch("http://127.0.0.1:2786/status")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.status === "open") {
-          setStatus("connected");
-          if (data.jid) setJid(data.jid);
-        } else if (data.status === "qr") {
-          // QR will come via WebSocket
-          setStatus("qr");
-        } else {
-          setStatus("disconnected");
-        }
-        setSidecarOnline(true);
-      })
-      .catch(() => {
-        setSidecarOnline(false);
-      });
+    // Fetch initial status from HTTP endpoint (faster than waiting for WS).
+    // The WebView can mount before the sidecar is bound, so retry with
+    // backoff until it answers — otherwise sidecarOnline gets stuck false.
+    function fetchInitialStatus(attempts = 0) {
+      fetch("http://127.0.0.1:2786/status")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.status === "open") {
+            setStatus("connected");
+            if (data.jid) setJid(data.jid);
+          } else if (data.status === "qr") {
+            // QR will come via WebSocket
+            setStatus("qr");
+          } else {
+            setStatus("disconnected");
+          }
+          setSidecarOnline(true);
+        })
+        .catch(() => {
+          if (attempts < 20) {
+            // 20 × 500ms = 10s ceiling — well past the sidecar's 30s ready
+            // timeout we expect during a cold start.
+            setTimeout(() => fetchInitialStatus(attempts + 1), 500);
+          } else {
+            setSidecarOnline(false);
+          }
+        });
+    }
+    fetchInitialStatus();
 
     connect();
 
