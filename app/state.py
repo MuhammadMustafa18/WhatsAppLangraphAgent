@@ -2,6 +2,11 @@
 
 This is the *only* place state shape is defined. Every iteration of the
 course will touch this file — keeping it tiny makes the diff readable.
+
+Phase 21a adds `persona_id` and `provider_id` (UUID strings) alongside
+the legacy literal fields. The graph will eventually resolve the IDs to
+Persona/Provider rows at runtime; for now they coexist with the literal
+fields so nothing breaks during the migration.
 """
 
 from typing import Any, TypedDict, Literal
@@ -28,6 +33,13 @@ class State(TypedDict, total=False):
       - generate fills `reply` and appends to `messages`.
       - the checkpointer persists the full state between invocations,
         keyed by `thread_id` (which is the chat_id in main.py).
+
+    Phase 21a: `persona_id` and `provider_id` are the new source of
+    truth — they reference rows in the personas / providers tables. The
+    legacy literal fields above (`persona`, `provider`) remain so older
+    invocations and the slash-prefix flow in main.py still work during
+    the migration. Once Phase 21e lands, the webhook will set the IDs
+    and the literal fields will be derived downstream.
     """
 
     # The user's message body, with any slash prefix already stripped.
@@ -47,6 +59,17 @@ class State(TypedDict, total=False):
 
     # Which LLM provider the generate node should call.
     provider: Literal["claude", "gpt", "free"]
+
+    # UUID of the Persona row to use. Set by the webhook when the user
+    # picks a persona via slash prefix (Phase 21e). The graph resolves
+    # this to a Persona ORM row at runtime and pulls system_prompt +
+    # knowledge_base from there.
+    persona_id: str
+
+    # UUID of the Provider row to use. Same story: set by the webhook
+    # from the slash prefix, resolved to a Provider row at runtime. The
+    # resolved provider's decrypted credentials go to the LLM call.
+    provider_id: str
 
 
 # Provider → human label for logging.
