@@ -296,6 +296,17 @@ export default function Personas() {
               <div className="mb-5">
                 <p className="text-caption text-ink mb-2">Quick-start presets</p>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(EMPTY_FORM)}
+                    className={`px-3 py-1.5 text-micro font-medium rounded-xs border transition ${
+                      form.name === "" && form.system_prompt === ""
+                        ? "bg-ink text-white border-ink"
+                        : "bg-canvas text-muted border-hairline hover:text-ink hover:border-ink/30"
+                    }`}
+                  >
+                    Custom
+                  </button>
                   {PRESETS.map((p) => (
                     <button
                       key={p.label}
