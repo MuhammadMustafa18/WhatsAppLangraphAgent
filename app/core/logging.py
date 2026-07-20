@@ -13,7 +13,10 @@ import uuid
 from typing import Any
 
 import structlog
-from structlog.contextvars import merge_contextvars, bind_contextvars
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+from structlog.contextvars import merge_contextvars, bind_contextvars, unbind_contextvars
 
 from app.core.config import get_settings
 
@@ -90,3 +93,22 @@ def configure_logging() -> None:
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Shortcut: structlog.get_logger that returns our wrapper type."""
     return structlog.get_logger(name or __name__)
+
+
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """FastAPI middleware that injects request_id into every log line.
+
+    Generates a UUID per request, binds it to structlog contextvars,
+    and adds it to the response headers (X-Request-ID).
+    Cleans up context after the response is sent.
+    """
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint,
+    ) -> Response:
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        bind_contextvars(request_id=request_id)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        unbind_contextvars("request_id")
+        return response

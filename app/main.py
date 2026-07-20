@@ -34,7 +34,7 @@ import structlog
 
 from app.core.config import get_settings
 from app.core.deps import get_db
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import configure_logging, get_logger, RequestContextMiddleware
 from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow, User
 from app.graph import build_graph
@@ -204,6 +204,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
+
+# Request-id injected into every log line
+app.add_middleware(RequestContextMiddleware)
 
 # CORS for Tauri frontend (localhost)
 app.add_middleware(
