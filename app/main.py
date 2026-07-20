@@ -19,7 +19,6 @@ should stay mechanical — all the interesting logic lives in `graph.py`.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -31,9 +30,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 import httpx
+import structlog
 
 from app.core.config import get_settings
 from app.core.deps import get_db
+from app.core.logging import configure_logging, get_logger
 from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow, User
 from app.graph import build_graph
@@ -45,10 +46,9 @@ from pathlib import Path
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 settings = get_settings()
+configure_logging()
 
-log = logging.getLogger("app")
-logging.basicConfig(level=settings.LOG_LEVEL,
-                    format="%(asctime)s %(levelname)s %(message)s")
+log = get_logger("app")
 
 # Module-level client; lifespan manages its lifecycle.
 _client = None  # BaileysClient | None
@@ -80,7 +80,7 @@ async def _get_single_user_id() -> str | None:
         if u is None:
             return None
         _cached_user_id = u.id
-        log.info("webhook user resolved: id=%s username=%s", u.id, u.username)
+        log.info("webhook user resolved", user_id=u.id, username=u.username)
         return _cached_user_id
 
 
@@ -137,10 +137,7 @@ async def _parse_slash_prefixes(
                     # replace this with name-from-resolved-row.
                     persona_literal = "booking"
             else:
-                log.warning(
-                    "/%s prefix but no persona row named %r for user=%s",
-                    name, name, user_id,
-                )
+                log.warning("slash_prefix_no_persona", prefix=name, user_id=user_id)
             body = body[len(prefix):].lstrip()
             break
 
@@ -192,13 +189,13 @@ async def lifespan(app: FastAPI):
     # dev session. See git log for the failed attempts.
 
     from app.baileys_client import BaileysClient
-    log.info("Lifespan: connecting to Baileys sidecar...")
+    log.info("lifespan_baileys_connecting")
     _client = BaileysClient(base_url=settings.BAILEYS_SIDECAR_URL)
-    log.info("Lifespan: Baileys client ready at %s", _client.base_url)
+    log.info("lifespan_baileys_ready", url=_client.base_url)
 
-    log.info("Lifespan: building graph...")
+    log.info("lifespan_building_graph")
     app.state.graph = await build_graph()
-    log.info("Lifespan: LangGraph compiled (async checkpointer ready)")
+    log.info("lifespan_graph_ready")
 
     yield
 
@@ -245,8 +242,8 @@ async def debug_webhook(request: Request) -> dict[str, str]:
     """Temporary endpoint to see what headers OpenWA is sending."""
     headers = dict(request.headers)
     body = await request.body()
-    log.info("DEBUG WEBHOOK - Headers: %s", headers)
-    log.info("DEBUG WEBHOOK - Body: %s", body[:500])  # First 500 chars
+    log.info("debug_webhook_headers", headers=headers)
+    log.info("debug_webhook_body_preview", body=body[:500])
     return {"status": "debug", "headers": str(headers)}
 
 
@@ -290,7 +287,7 @@ async def webhook(request: Request) -> dict[str, str]:
     except Exception:
         # Probe / malformed body — return 200 so OpenWA doesn't retry,
         # but log loudly so we can see what came through.
-        log.warning("non-JSON body on /webhook: %r", raw[:200])
+        log.warning("non_json_body", body_preview=raw[:200])
         return {"status": "ignored-not-json"}
 
     if event.get("event") != "message.received":
@@ -312,7 +309,7 @@ async def webhook(request: Request) -> dict[str, str]:
     # @lid is newer WhatsApp privacy IDs — OpenWA *may* 500 on these, but
     # we attempt the send anyway and let _handle() catch the error gracefully.
     if chat_id.endswith(("@newsletter", "@broadcast")):
-        log.warning("Skipping unreplyable chat_id=%s", chat_id)
+        log.warning("skipping_unreplyable_chat", chat_id=chat_id)
         return {"status": "skipped-unreplyable-chat"}
 
     # Resolve the single user this install serves. Returns None on a
@@ -340,14 +337,14 @@ async def webhook(request: Request) -> dict[str, str]:
         body_after = body
 
     if persona_id:
-        log.info("persona_id resolved: %s", persona_id)
+        log.info("persona_id_resolved", persona_id=persona_id)
     if provider_id:
-        log.info("provider_id resolved: %s", provider_id)
+        log.info("provider_id_resolved", provider_id=provider_id)
 
     body = body_after.strip()
     if not body:
         # Slash command without any actual message.
-        log.warning("empty body after slash parse (chat=%s)", chat_id)
+        log.warning("empty_body_after_slash", chat_id=chat_id)
         return {"status": "empty-after-slash"}
 
     # ACK fast — OpenWA's webhook timeout is ~10s, and an LLM call can
@@ -382,16 +379,16 @@ async def _clear_thread(app, chat_id: str) -> None:
     saver = app.state.graph._saver  # stashed by build_graph()
     try:
         await asyncio.to_thread(saver.delete_thread, chat_id)
-        log.info("cleared checkpoint history for chat=%s", chat_id)
+        log.info("checkpoint_history_cleared", chat_id=chat_id)
     except Exception:
-        log.exception("failed to clear history for chat=%s", chat_id)
+        log.exception("failed_to_clear_history", chat_id=chat_id)
         try:
             await _client.send_text(
                 chat_id=chat_id,
                 text="Sorry, I couldn't clear the history. Try again or restart the bot.",
             )
         except Exception:
-            log.exception("send_text after clear failure also failed for chat=%s", chat_id)
+            log.exception("send_text_after_clear_failed", chat_id=chat_id)
         return
 
     try:
@@ -400,7 +397,7 @@ async def _clear_thread(app, chat_id: str) -> None:
             text="Cleared conversation history for this chat.",
         )
     except Exception:
-        log.exception("send_text confirmation failed for chat=%s", chat_id)
+        log.exception("send_text_confirmation_failed", chat_id=chat_id)
 
 
 async def _handle(
@@ -426,36 +423,34 @@ async def _handle(
         result = await app.state.graph.ainvoke(initial_state, config=config)
         reply = (result.get("reply") or "").strip()
         if not reply:
-            log.warning("graph returned empty reply for chat=%s", chat_id)
+            log.warning("empty_reply", chat_id=chat_id)
             return
 
-        log.info(
-            "chat=%s in=%r out=%r persona_id=%s provider_id=%s",
-            chat_id,
-            initial_state.get("message"),
-            reply,
-            initial_state.get("persona_id"),
-            initial_state.get("provider_id"),
+        log.info("reply_sent",
+            chat_id=chat_id,
+            in_msg=initial_state.get("message"),
+            out_msg=reply,
+            persona_id=initial_state.get("persona_id"),
+            provider_id=initial_state.get("provider_id"),
         )
         try:
             await _client.send_text(chat_id=chat_id, text=reply)
         except AttributeError:
             # Test mode: _client is None. Don't try to send.
-            log.info("no _client configured (test/desktop mode); skipping send")
+            log.info("no_client_skipping_send")
         except httpx.HTTPStatusError as exc:
             body_text = ""
             try:
                 body_text = exc.response.text[:200]
             except Exception:
                 pass
-            log.warning(
-                "send-text failed (chat_id=%s, status=%d): %s",
-                chat_id, exc.response.status_code, body_text,
+            log.warning("send_text_failed",
+                chat_id=chat_id, status_code=exc.response.status_code, response_body=body_text,
             )
         except httpx.HTTPError:
-            log.exception("send-text transport error for chat_id=%s", chat_id)
+            log.exception("send_text_transport_error", chat_id=chat_id)
     except Exception:
-        log.exception("Background handler crashed for chat_id=%s", chat_id)
+        log.exception("background_handler_crashed", chat_id=chat_id)
 
 
 # --- CLI entry point ---

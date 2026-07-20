@@ -58,6 +58,7 @@ class Settings(BaseSettings):
 
     # --- Logging ---
     LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "dev"  # "dev" for pretty console, "json" for production
 
     model_config = SettingsConfigDict(
         env_file=".env",
