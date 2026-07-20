@@ -208,10 +208,14 @@ app = FastAPI(title="recluze", lifespan=lifespan)
 # Request-id injected into every log line
 app.add_middleware(RequestContextMiddleware)
 
-# CORS for Tauri frontend (localhost)
+# CORS for Tauri frontend (localhost). This is a single-user desktop app
+# talking to a localhost backend — the production WebView origin varies by
+# Tauri version and platform (tauri://localhost, http://tauri.localhost,
+# https://tauri.localhost, etc.). Use a regex on the loopback range to
+# cover all of them without having to enumerate every variant.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "http://127.0.0.1:1420"],  # Vite dev server
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|tauri\.localhost)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
