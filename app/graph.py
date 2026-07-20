@@ -23,13 +23,12 @@ State shape (in app/state.py):
     reply:     str           # this turn's reply
 """
 
-import logging
-
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.logging import get_logger
 from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow
 from app.llm import chat as free_chat
@@ -38,7 +37,7 @@ from app.providers import registry as provider_registry
 from app.repositories import persona_repo, provider_repo
 from app.state import Persona, State
 
-log = logging.getLogger("app.graph")
+log = get_logger("graph")
 
 settings = get_settings()
 
@@ -79,10 +78,7 @@ async def _resolve_persona(
         row = await persona_repo.get_persona_by_id(db, pid)
         if row is not None and row.user_id == user_id:
             return row
-        log.warning(
-            "persona_id=%s not found or not owned by user=%s; falling back",
-            pid, user_id,
-        )
+        log.warning("persona_id_not_found", persona_id=pid, user_id=user_id)
 
     rows = await persona_repo.list_personas_by_user(db, user_id)
     active = [r for r in rows if r.is_active]
@@ -119,19 +115,13 @@ async def _resolve_provider(
         row = await provider_repo.get_provider_by_id(db, pid)
         if row is not None and row.user_id == user_id:
             return row
-        log.warning(
-            "provider_id=%s not found or not owned by user=%s; falling back",
-            pid, user_id,
-        )
+        log.warning("provider_id_not_found", provider_id=pid, user_id=user_id)
 
     if persona.model_override:
         row = await provider_repo.get_provider_by_id(db, persona.model_override)
         if row is not None and row.user_id == user_id:
             return row
-        log.warning(
-            "persona %s model_override=%s unreachable; falling back",
-            persona.id, persona.model_override,
-        )
+        log.warning("model_override_unreachable", persona_id=persona.id, model_override=persona.model_override)
 
     default = await provider_repo.get_default_provider(db, user_id)
     if default is not None:
@@ -167,7 +157,7 @@ async def classify(state: State, config: dict | None = None) -> dict:
     compat with any persisted checkpoints; Phase 22+ may drop it.
     """
     if state.get("persona_id"):
-        log.info("persona_id already set: %s", state["persona_id"])
+        log.info("persona_id_already_set", persona_id=state["persona_id"])
         return {}
 
     user_id = (config or {}).get("configurable", {}).get("user_id")
@@ -177,7 +167,7 @@ async def classify(state: State, config: dict | None = None) -> dict:
         # leave empty so the router dispatches via DEFAULT_PERSONA.
         legacy = state.get("persona")
         if legacy:
-            log.info("legacy persona=%s, no user context", legacy)
+            log.info("legacy_persona_no_user_context", persona=legacy)
         return {}
 
     try:
@@ -186,10 +176,10 @@ async def classify(state: State, config: dict | None = None) -> dict:
     except LookupError:
         # No usable persona for this user. Don't crash classify — let
         # generate() raise a clean error with the same message.
-        log.warning("no usable persona for user=%s; generate() will raise", user_id)
+        log.warning("no_usable_persona", user_id=user_id)
         return {}
 
-    log.info("resolved persona=%s for user=%s", persona.name, user_id)
+    log.info("resolved_persona", persona=persona.name, user_id=user_id)
     return {"persona_id": persona.id}
 
 
@@ -266,10 +256,7 @@ async def generate(
         {"role": "user", "content": user_msg},
         {"role": "assistant", "content": text},
     ]
-    log.info(
-        "generated reply (persona=%s provider=%s chars=%d)",
-        persona.name, provider_row.name, len(text),
-    )
+    log.info("generated_reply", persona=persona.name, provider=provider_row.name, chars=len(text))
     return {"reply": text, "messages": new_history}
 
 
