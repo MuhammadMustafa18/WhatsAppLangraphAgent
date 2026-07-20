@@ -15,6 +15,7 @@ import Modal from "../components/Modal";
 import {
   createPersona,
   deletePersona,
+  extractKnowledgePdf,
   listPersonas,
   PersonaCreate,
   PersonaResponse,
@@ -412,6 +413,36 @@ export default function Personas() {
                 rows={3}
                 placeholder="FAQ: returns within 30 days. Shipping is free over $50. Customer support hours are 9am-5pm EST."
               />
+              <div className="mt-2 flex items-center gap-3">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  id="pdf-upload"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const text = await extractKnowledgePdf(file);
+                      setForm({ ...form, knowledge_base: text });
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : "upload failed");
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <label
+                  htmlFor="pdf-upload"
+                  className="btn-pill-outline text-micro cursor-pointer"
+                >
+                  Upload PDF
+                </label>
+                {form.knowledge_base && (
+                  <span className="text-micro text-muted">
+                    {form.knowledge_base.length.toLocaleString()} chars
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="mb-6">

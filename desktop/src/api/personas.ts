@@ -70,6 +70,17 @@ export async function updatePersona(
   return readJson<PersonaResponse>(res);
 }
 
+export async function extractKnowledgePdf(file: File): Promise<string> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await apiFetch("/personas/knowledge/extract", {
+    method: "POST",
+    body,
+  });
+  const data = await readJson<{ text: string }>(res);
+  return data.text;
+}
+
 export async function deletePersona(id: string): Promise<void> {
   const res = await apiFetch(`/personas/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
