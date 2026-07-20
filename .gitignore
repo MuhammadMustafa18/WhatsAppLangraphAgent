@@ -26,6 +26,12 @@ Thumbs.db
 # Tool state files (internal)
 .mimocode/
 
+# Local dev artifacts (not part of Recluze)
+fattani_computers_knowledge_base.pdf
+AI Season Day*.pptx
+AI Season Day*.pptx.bak
+scripts/rewrite_pptx.py
+
 # Local planning notes (not part of the project)
 plan.md
 
@@ -47,6 +53,7 @@ desktop/dist/
 # Baileys sidecar
 baileys-sidecar/node_modules/
 baileys-sidecar/test-baileys.js
+baileys-sidecar/baileys-sidecar.exe
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 

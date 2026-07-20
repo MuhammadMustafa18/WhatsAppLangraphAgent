@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
@@ -107,14 +109,10 @@ impl SidecarManager {
                 project_root,
             )
         } else {
-            let exe_dir = app_dir.join("sidecars").join("python");
-            let api_exe = exe_dir.join(if cfg!(windows) {
-                "recluze-api.exe"
-            } else {
-                "recluze-api"
-            });
+            let exe_name = if cfg!(windows) { "recluze-api.exe" } else { "recluze-api" };
+            let api_exe = app_dir.join("sidecars").join("python").join(exe_name);
             if !api_exe.exists() {
-                return Err(format!("API binary not found at {:?}", api_exe));
+                return Err(format!("API binary not found at {:?} (run setup_sidecar first)", api_exe));
             }
             (
                 api_exe.to_str().unwrap().to_string(),
@@ -248,13 +246,56 @@ impl SidecarManager {
 
 }
 
+/// Copy a bundled sidecar binary from the app's resource directory to the
+/// per-user data directory so it can be executed (users may not have write
+/// access to the install directory).
+fn ensure_sidecar_binary(
+    app: &AppHandle,
+    app_data: &std::path::Path,
+    resource_subdir: &[&str],
+    binary_name: &str,
+) -> Result<PathBuf, String> {
+    let exe_name = if cfg!(windows) {
+        format!("{}.exe", binary_name)
+    } else {
+        binary_name.to_string()
+    };
+
+    let dest_dir = resource_subdir.iter().fold(app_data.to_path_buf(), |p, seg| p.join(seg));
+    let dest = dest_dir.join(&exe_name);
+
+    if dest.exists() {
+        return Ok(dest);
+    }
+
+    // Copy from bundled resources
+    let res_dir = app.path().resource_dir().map_err(|e| format!("resource_dir: {}", e))?;
+    let mut src = res_dir.clone();
+    for seg in resource_subdir {
+        src = src.join(seg);
+    }
+    src = src.join(&exe_name);
+
+    if !src.exists() {
+        return Err(format!(
+            "Sidecar binary not found in resources at {:?} or at {:?}",
+            src, dest
+        ));
+    }
+
+    fs::create_dir_all(&dest_dir).map_err(|e| format!("create dir {:?}: {}", dest_dir, e))?;
+    fs::copy(&src, &dest).map_err(|e| format!("copy {:?} -> {:?}: {}", src, dest, e))?;
+    log::info!("Copied sidecar binary: {:?} -> {:?}", src, dest);
+    Ok(dest)
+}
+
 /// Setup the sidecar: start backend, wait for ready, register cleanup on exit.
 pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
     log::info!("Setting up backend sidecar");
     let manager = SidecarManager::new();
 
     // Get the app data directory (the per-user app folder, e.g.
-    // %APPDATA%\com.recluze.app on Windows). Inside that we keep
+    // %APPDATA%\com.recluze.desktop on Windows). Inside that we keep
     // runtime data in a 'data' subdir so the app folder can also hold
     // future config files, logs, etc. without collision.
     let app_dir = app.path().app_data_dir().map_err(|e| {
@@ -270,6 +311,11 @@ pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
         log::error!("Failed to create data_dir: {}", e);
         e.to_string()
     })?;
+
+    // Ensure sidecar binary is present (copy from bundled resources on first launch)
+    if !cfg!(debug_assertions) {
+        let _ = ensure_sidecar_binary(app, &data_dir, &["sidecars", "python"], "recluze-api")?;
+    }
 
     // Start the backend
     manager.start(&data_dir)?;

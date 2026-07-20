@@ -1,3 +1,4 @@
+use std::fs;
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
@@ -283,6 +284,22 @@ pub fn setup_baileys(app: &AppHandle) -> Result<(), String> {
         log::error!("Failed to create data_dir: {}", e);
         e.to_string()
     })?;
+
+    // Ensure sidecar binary is present in release mode
+    if !cfg!(debug_assertions) {
+        let exe_name = if cfg!(windows) { "baileys-sidecar.exe" } else { "baileys-sidecar" };
+        let dest = data_dir.join("sidecars").join(exe_name);
+        if !dest.exists() {
+            let res_dir = app.path().resource_dir().map_err(|e| format!("resource_dir: {}", e))?;
+            let src = res_dir.join("sidecars").join(exe_name);
+            if !src.exists() {
+                return Err(format!("baileys-sidecar not found in resources at {:?}", src));
+            }
+            fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+            fs::copy(&src, &dest).map_err(|e| format!("copy {:?} -> {:?}: {}", src, dest, e))?;
+            log::info!("Copied baileys-sidecar: {:?} -> {:?}", src, dest);
+        }
+    }
 
     let manager = BaileysManager::new();
     manager.start(&data_dir)?;

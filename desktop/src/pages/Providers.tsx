@@ -69,7 +69,7 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     name: "groq",
     type: "openai",
     base_url: "https://api.groq.com/openai/v1",
-    model: "llama3-70b-8192",
+    model: "llama-3.3-70b-versatile",
     max_tokens: 4096,
   },
 ];
