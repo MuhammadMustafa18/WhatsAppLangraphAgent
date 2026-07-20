@@ -289,7 +289,7 @@ export default function Personas() {
         <Modal
           title={mode.kind === "create" ? "Add Persona" : `Edit ${mode.persona.name}`}
           onClose={closeModal}
-          maxWidth="max-w-2xl"
+          maxWidth="max-w-3xl"
         >
           <form onSubmit={handleSubmit}>
             {mode.kind === "create" && (
@@ -333,22 +333,52 @@ export default function Personas() {
               </div>
             )}
 
-            <div className="mb-4">
-              <label className="block text-caption text-ink mb-2">
-                Name{" "}
-                <span className="text-body-muted">
-                  (lowercase: resume, services, booking…)
-                </span>
-              </label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-                required
-                maxLength={100}
-                placeholder="support"
-              />
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-caption text-ink mb-2">
+                  Name{" "}
+                  <span className="text-body-muted">
+                    (lowercase)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                  required
+                  maxLength={100}
+                  placeholder="support"
+                />
+              </div>
+              <div>
+                <label className="block text-caption text-ink mb-2">
+                  Model override{" "}
+                  <span className="text-body-muted">
+                    (optional)
+                  </span>
+                </label>
+                <select
+                  value={form.model_override}
+                  onChange={(e) => setForm({ ...form, model_override: e.target.value })}
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                >
+                  <option value="">— Default provider —</option>
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.model})
+                    </option>
+                  ))}
+                </select>
+                {providers.length === 0 && (
+                  <p className="text-caption text-body-muted mt-2">
+                    No providers yet.{" "}
+                    <a href="/providers" className="underline">
+                      Add one
+                    </a>
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="mb-4">
@@ -363,7 +393,7 @@ export default function Personas() {
                 onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
                 className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus font-mono text-caption"
                 required
-                rows={6}
+                rows={4}
                 placeholder="You are a support agent for a small ecommerce store. Be brief, friendly, and always ask for the order number before looking anything up."
               />
             </div>
@@ -379,38 +409,9 @@ export default function Personas() {
                 value={form.knowledge_base}
                 onChange={(e) => setForm({ ...form, knowledge_base: e.target.value })}
                 className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus font-mono text-caption"
-                rows={4}
+                rows={3}
                 placeholder="FAQ: returns within 30 days. Shipping is free over $50. Customer support hours are 9am-5pm EST."
               />
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-caption text-ink mb-2">
-                Model override{" "}
-                <span className="text-body-muted">
-                  (optional — leave blank to use your default provider)
-                </span>
-              </label>
-              <select
-                value={form.model_override}
-                onChange={(e) => setForm({ ...form, model_override: e.target.value })}
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-              >
-                <option value="">— Default provider —</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.model})
-                  </option>
-                ))}
-              </select>
-              {providers.length === 0 && (
-                <p className="text-caption text-body-muted mt-2">
-                  No providers configured yet.{" "}
-                  <a href="/providers" className="btn-secondary inline-flex">
-                    Add one first
-                  </a>
-                </p>
-              )}
             </div>
 
             <div className="mb-6">

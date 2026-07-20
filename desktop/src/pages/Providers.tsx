@@ -372,6 +372,7 @@ export default function Providers() {
         <Modal
           title={mode.kind === "create" ? "Add Provider" : `Edit ${mode.provider.name}`}
           onClose={closeModal}
+          maxWidth="max-w-3xl"
         >
           <form onSubmit={handleSubmit}>
             {mode.kind === "create" && (
@@ -416,33 +417,34 @@ export default function Providers() {
               </div>
             )}
 
-            <div className="mb-4">
-              <label className="block text-caption text-ink mb-2">Name</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-                required
-                maxLength={100}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-caption text-ink mb-2">Type</label>
-              <select
-                value={form.type}
-                onChange={(e) =>
-                  setForm({ ...form, type: e.target.value as ProviderType })
-                }
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-              >
-                {PROVIDER_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-caption text-ink mb-2">Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                  required
+                  maxLength={100}
+                />
+              </div>
+              <div>
+                <label className="block text-caption text-ink mb-2">Type</label>
+                <select
+                  value={form.type}
+                  onChange={(e) =>
+                    setForm({ ...form, type: e.target.value as ProviderType })
+                  }
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                >
+                  {PROVIDER_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="mb-4">
@@ -485,33 +487,34 @@ export default function Providers() {
               />
             </div>
 
-            <div className="mb-4">
-              <label className="block text-caption text-ink mb-2">Model</label>
-              <input
-                type="text"
-                value={form.model}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-                placeholder="gpt-4o"
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-                required
-                maxLength={100}
-              />
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-caption text-ink mb-2">
-                Max tokens
-              </label>
-              <input
-                type="number"
-                value={form.max_tokens}
-                onChange={(e) =>
-                  setForm({ ...form, max_tokens: parseInt(e.target.value) || 1024 })
-                }
-                min={1}
-                max={32000}
-                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-              />
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-caption text-ink mb-2">Model</label>
+                <input
+                  type="text"
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  placeholder="gpt-4o"
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                  required
+                  maxLength={100}
+                />
+              </div>
+              <div>
+                <label className="block text-caption text-ink mb-2">
+                  Max tokens
+                </label>
+                <input
+                  type="number"
+                  value={form.max_tokens}
+                  onChange={(e) =>
+                    setForm({ ...form, max_tokens: parseInt(e.target.value) || 1024 })
+                  }
+                  min={1}
+                  max={32000}
+                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+                />
+              </div>
             </div>
 
             {error && (
