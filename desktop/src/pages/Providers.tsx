@@ -64,6 +64,14 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     model: "llama3",
     max_tokens: 4096,
   },
+  {
+    label: "Groq",
+    name: "groq",
+    type: "openai",
+    base_url: "https://api.groq.com/openai/v1",
+    model: "llama3-70b-8192",
+    max_tokens: 4096,
+  },
 ];
 
 type FormMode =
@@ -159,7 +167,7 @@ export default function Providers() {
         const data: ProviderCreate = {
           name: form.name,
           type: form.type,
-          base_url: form.type === "custom" ? form.base_url || null : null,
+          base_url: form.base_url || null,
           api_key: form.api_key,
           model: form.model,
           max_tokens: form.max_tokens,
@@ -172,7 +180,7 @@ export default function Providers() {
         const data: ProviderUpdate = {
           name: form.name,
           type: form.type,
-          base_url: form.type === "custom" ? form.base_url || null : null,
+          base_url: form.base_url || null,
           model: form.model,
           max_tokens: form.max_tokens,
         };
@@ -437,23 +445,24 @@ export default function Providers() {
               </select>
             </div>
 
-            {form.type === "custom" && (
-              <div className="mb-4">
-                <label className="block text-caption text-ink mb-2">
-                  Base URL
-                </label>
-                <input
-                  type="text"
-                  value={form.base_url}
-                  onChange={(e) =>
-                    setForm({ ...form, base_url: e.target.value })
-                  }
-                  placeholder="http://localhost:11434/v1"
-                  className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
-                  required
-                />
-              </div>
-            )}
+            <div className="mb-4">
+              <label className="block text-caption text-ink mb-2">
+                Base URL
+                <span className="text-body-muted">
+                  {" "}
+                  (leave blank to use provider default)
+                </span>
+              </label>
+              <input
+                type="text"
+                value={form.base_url}
+                onChange={(e) =>
+                  setForm({ ...form, base_url: e.target.value })
+                }
+                placeholder={form.type === "openai" ? "https://api.openai.com/v1" : form.type === "anthropic" ? "https://api.anthropic.com" : "http://localhost:11434/v1"}
+                className="w-full bg-canvas border border-border-light text-ink px-4 py-3 rounded-sm focus:outline-none focus:border-form-focus"
+              />
+            </div>
 
             <div className="mb-4">
               <label className="block text-caption text-ink mb-2">
