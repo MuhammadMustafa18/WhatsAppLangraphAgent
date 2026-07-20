@@ -23,6 +23,53 @@ import {
 } from "../api/personas";
 import { listProviders, ProviderResponse } from "../api/providers";
 
+interface Preset {
+  label: string;
+  name: string;
+  system_prompt: string;
+  knowledge_base: string;
+}
+
+const PRESETS: Preset[] = [
+  {
+    label: "Support",
+    name: "support",
+    system_prompt:
+      "You are a support agent for a small ecommerce store. Be brief, friendly, and always ask for the order number before looking anything up.",
+    knowledge_base:
+      "FAQ: returns within 30 days. Shipping is free over $50. Customer support hours are 9am-5pm EST.",
+  },
+  {
+    label: "Booking",
+    name: "booking",
+    system_prompt:
+      "You handle appointment bookings and rescheduling. Be concise, confirm availability, and always ask for the preferred date and time before proceeding.",
+    knowledge_base:
+      "Appointments are 30 min slots. Cancellations must be 24hr in advance. Same-day bookings are available if slots are open.",
+  },
+  {
+    label: "Resume",
+    name: "resume",
+    system_prompt:
+      "You are a career advisor helping refine resumes and cover letters. Give direct, actionable feedback. Focus on achievements over duties.",
+    knowledge_base: "",
+  },
+  {
+    label: "Personal",
+    name: "personal",
+    system_prompt:
+      "You are a friendly personal assistant. You chat casually, help with everyday questions, and never give professional advice (legal, medical, financial).",
+    knowledge_base: "",
+  },
+  {
+    label: "Services",
+    name: "services",
+    system_prompt:
+      "You represent a small services business. Describe what you offer, quote prices, and direct the user to book a consultation for custom work.",
+    knowledge_base: "",
+  },
+];
+
 type FormMode =
   | { kind: "closed" }
   | { kind: "create" }
@@ -245,6 +292,36 @@ export default function Personas() {
           maxWidth="max-w-2xl"
         >
           <form onSubmit={handleSubmit}>
+            {mode.kind === "create" && (
+              <div className="mb-5">
+                <p className="text-caption text-ink mb-2">Quick-start presets</p>
+                <div className="flex flex-wrap gap-2">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() =>
+                        setForm({
+                          name: p.name,
+                          system_prompt: p.system_prompt,
+                          knowledge_base: p.knowledge_base,
+                          model_override: "",
+                          is_active: true,
+                        })
+                      }
+                      className={`px-3 py-1.5 text-micro font-medium rounded-xs border transition ${
+                        form.name === p.name && form.system_prompt === p.system_prompt
+                          ? "bg-ink text-white border-ink"
+                          : "bg-canvas text-muted border-hairline hover:text-ink hover:border-ink/30"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mb-4">
               <label className="block text-caption text-ink mb-2">
                 Name{" "}
