@@ -7,11 +7,11 @@ Recluze is a standalone desktop app that turns your personal WhatsApp into an AI
 No Python. No Node. No Docker. No cloud account. Download the installer, double-click it, and you have a bot.
 
 <p align="center">
-  <a href="https://github.com/MuhammadMustafa18/WhatsAppLangraphAgent/releases/latest">
-    <img src="https://img.shields.io/github/v/release/MuhammadMustafa18/WhatsAppLangraphAgent?style=for-the-badge" alt="Latest Release">
+  <a href="https://github.com/MuhammadMustafa18/Recluze/releases/latest">
+    <img src="https://img.shields.io/github/v/release/MuhammadMustafa18/Recluze?style=for-the-badge" alt="Latest Release">
   </a>
-  <a href="https://github.com/MuhammadMustafa18/WhatsAppLangraphAgent/releases/latest">
-    <img src="https://img.shields.io/github/downloads/MuhammadMustafa18/WhatsAppLangraphAgent/total?style=for-the-badge" alt="Downloads">
+  <a href="https://github.com/MuhammadMustafa18/Recluze/releases/latest">
+    <img src="https://img.shields.io/github/downloads/MuhammadMustafa18/Recluze/total?style=for-the-badge" alt="Downloads">
   </a>
 </p>
 
@@ -19,7 +19,7 @@ No Python. No Node. No Docker. No cloud account. Download the installer, double-
 
 ### 1. Download
 
-Grab the installer for Windows from the [latest release](https://github.com/MuhammadMustafa18/WhatsAppLangraphAgent/releases/latest):
+Grab the installer for Windows from the [latest release](https://github.com/MuhammadMustafa18/Recluze/releases/latest):
 
 - **`Recluze_0.1.0_x64-setup.exe`** — 83 MB NSIS installer (recommended, no admin needed)
 - **`Recluze_0.1.0_x64_en-US.msi`** — 98 MB MSI installer (per-machine)
