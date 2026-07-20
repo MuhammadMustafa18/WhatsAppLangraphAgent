@@ -110,7 +110,7 @@ export default function Observability() {
               const level = entry.level ?? "info";
               const event = entry.event ?? "";
               const extras = Object.entries(entry).filter(
-                ([k]) => !["event", "level", "timestamp", "logger"].includes(k),
+                ([k]) => !["event", "level", "timestamp", "logger", "exc_info", "stack"].includes(k),
               );
               return (
                 <div
@@ -134,9 +134,9 @@ export default function Observability() {
                   </span>
                   <span className="text-muted truncate">
                     {extras.map(([k, v]) => (
-                      <span key={k} className="mr-2 whitespace-nowrap">
+                      <span key={k} className="whitespace-nowrap">
                         <span className="text-gray-400">{k}</span>
-                        <span className="text-muted">={String(v)}</span>
+                        <span className="text-muted">={String(v)} </span>
                       </span>
                     ))}
                   </span>
