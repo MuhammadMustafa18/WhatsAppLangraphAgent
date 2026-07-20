@@ -14,6 +14,58 @@ import {
   validateProvider,
 } from "../api/providers";
 
+interface ProviderPreset {
+  label: string;
+  name: string;
+  type: ProviderType;
+  base_url: string;
+  model: string;
+  max_tokens: number;
+}
+
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    label: "GPT-4o",
+    name: "gpt",
+    type: "openai",
+    base_url: "",
+    model: "gpt-4o",
+    max_tokens: 4096,
+  },
+  {
+    label: "GPT-4o Mini",
+    name: "gpt",
+    type: "openai",
+    base_url: "",
+    model: "gpt-4o-mini",
+    max_tokens: 8192,
+  },
+  {
+    label: "Claude",
+    name: "claude",
+    type: "anthropic",
+    base_url: "",
+    model: "claude-sonnet-4-5",
+    max_tokens: 4096,
+  },
+  {
+    label: "LM Studio",
+    name: "local",
+    type: "custom",
+    base_url: "http://localhost:1234/v1",
+    model: "auto",
+    max_tokens: 4096,
+  },
+  {
+    label: "Ollama",
+    name: "local",
+    type: "custom",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3",
+    max_tokens: 4096,
+  },
+];
+
 type FormMode =
   | { kind: "closed" }
   | { kind: "create" }
@@ -314,6 +366,48 @@ export default function Providers() {
           onClose={closeModal}
         >
           <form onSubmit={handleSubmit}>
+            {mode.kind === "create" && (
+              <div className="mb-5">
+                <p className="text-caption text-ink mb-2">Quick-start presets</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(EMPTY_FORM)}
+                    className={`px-3 py-1.5 text-micro font-medium rounded-xs border transition ${
+                      form.name === "" && form.model === ""
+                        ? "bg-ink text-white border-ink"
+                        : "bg-canvas text-muted border-hairline hover:text-ink hover:border-ink/30"
+                    }`}
+                  >
+                    Custom
+                  </button>
+                  {PROVIDER_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() =>
+                        setForm({
+                          name: p.name,
+                          type: p.type,
+                          base_url: p.base_url,
+                          api_key: "",
+                          model: p.model,
+                          max_tokens: p.max_tokens,
+                        })
+                      }
+                      className={`px-3 py-1.5 text-micro font-medium rounded-xs border transition ${
+                        form.name === p.name && form.model === p.model
+                          ? "bg-ink text-white border-ink"
+                          : "bg-canvas text-muted border-hairline hover:text-ink hover:border-ink/30"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mb-4">
               <label className="block text-caption text-ink mb-2">Name</label>
               <input
