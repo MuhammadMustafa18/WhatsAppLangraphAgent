@@ -7,6 +7,7 @@ const nav = [
   { to: "/personas", label: "Personas" },
   { to: "/connections", label: "Connections" },
   { to: "/chat", label: "Chat" },
+  { to: "/observability", label: "Observability" },
 ];
 
 export default function Layout() {

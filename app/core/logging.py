@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import deque
 from typing import Any
 
 import structlog
@@ -43,6 +44,18 @@ def _redaction_processor(
     return event_dict
 
 
+log_buffer: deque[dict[str, Any]] = deque(maxlen=2000)
+
+
+def _log_buffer_processor(
+    _logger: structlog.stdlib.BoundLogger,
+    _method_name: str,
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
+    log_buffer.append(event_dict.copy())
+    return event_dict
+
+
 def configure_logging() -> None:
     """Call once at app startup to replace stdlib logging with structlog.
 
@@ -59,6 +72,7 @@ def configure_logging() -> None:
         structlog.dev.set_exc_info,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
+        _log_buffer_processor,
     ]
 
     if is_dev:

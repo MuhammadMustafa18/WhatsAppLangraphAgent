@@ -34,7 +34,7 @@ import structlog
 
 from app.core.config import get_settings
 from app.core.deps import get_db
-from app.core.logging import configure_logging, get_logger, RequestContextMiddleware
+from app.core.logging import configure_logging, get_logger, RequestContextMiddleware, log_buffer
 from app.db.engine import async_session
 from app.db.models import Persona as PersonaRow, Provider as ProviderRow, User
 from app.graph import build_graph
@@ -230,6 +230,12 @@ app.include_router(personas_router)
 async def health() -> dict[str, str]:
     """Cheap endpoint so we can curl from inside the compose network."""
     return {"status": "ok"}
+
+
+@app.get("/logs")
+async def get_logs(lines: int = 100) -> dict[str, Any]:
+    """Return recent log lines from the in-memory buffer."""
+    return {"lines": list(log_buffer)[-lines:]}
 
 
 @app.get("/db-test")

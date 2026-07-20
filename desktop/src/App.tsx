@@ -9,6 +9,7 @@ import Providers from "./pages/Providers";
 import Personas from "./pages/Personas";
 import Connections from "./pages/Connections";
 import Chat from "./pages/Chat";
+import Observability from "./pages/Observability";
 import { SIDECARS, waitForHealthy, type SidecarId } from "./lib/health";
 
 // Anti-flash: keep the splash visible for at least this long even if both
@@ -107,6 +108,7 @@ export default function App() {
           <Route path="personas" element={<Personas />} />
           <Route path="connections" element={<Connections />} />
           <Route path="chat" element={<Chat />} />
+          <Route path="observability" element={<Observability />} />
         </Route>
       </Routes>
     </BrowserRouter>
