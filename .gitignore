@@ -57,6 +57,10 @@ baileys-sidecar/baileys-sidecar.exe
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 
+# Compiled sidecar binaries (rebuilt by scripts/build_release.bat,
+# too large for git — recluze-api.exe ~53MB, baileys-sidecar.exe ~121MB)
+desktop/src-tauri/sidecars/
+
 # Python cache + pyright/baseline noise
 .mypy_cache/
 .ruff_cache/
