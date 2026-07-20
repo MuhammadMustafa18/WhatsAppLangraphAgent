@@ -249,6 +249,8 @@ impl SidecarManager {
 /// Copy a bundled sidecar binary from the app's resource directory to the
 /// per-user data directory so it can be executed (users may not have write
 /// access to the install directory).
+///
+/// Always overwrites the destination so app upgrades replace the old binary.
 fn ensure_sidecar_binary(
     app: &AppHandle,
     app_data: &std::path::Path,
@@ -264,11 +266,7 @@ fn ensure_sidecar_binary(
     let dest_dir = resource_subdir.iter().fold(app_data.to_path_buf(), |p, seg| p.join(seg));
     let dest = dest_dir.join(&exe_name);
 
-    if dest.exists() {
-        return Ok(dest);
-    }
-
-    // Copy from bundled resources
+    // Copy from bundled resources (overwrites any existing binary)
     let res_dir = app.path().resource_dir().map_err(|e| format!("resource_dir: {}", e))?;
     let mut src = res_dir.clone();
     for seg in resource_subdir {
@@ -277,6 +275,15 @@ fn ensure_sidecar_binary(
     src = src.join(&exe_name);
 
     if !src.exists() {
+        // If dest already exists from a prior install, we can still use it.
+        // Log a warning but don't block startup.
+        if dest.exists() {
+            log::warn!(
+                "Sidecar binary not found in resources at {:?}, using existing {:?}",
+                src, dest
+            );
+            return Ok(dest);
+        }
         return Err(format!(
             "Sidecar binary not found in resources at {:?} or at {:?}",
             src, dest

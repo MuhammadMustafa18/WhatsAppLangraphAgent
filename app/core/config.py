@@ -5,6 +5,7 @@ Usage:
     settings.OPENWA_API_KEY  # guaranteed str, not str | None
 """
 
+import secrets
 from functools import lru_cache
 from pathlib import Path
 
@@ -30,8 +31,11 @@ class Settings(BaseSettings):
     # "data/app.sqlite", which would double up with APP_DATA_DIR.
     DATABASE_URL: str = "sqlite+aiosqlite:///app.sqlite"
 
-    # --- JWT (required) ---
-    JWT_SECRET: str
+    # --- JWT ---
+    # Empty string means "not yet generated".  On first boot the app
+    # generates a random secret and persists it to .env so tokens stay
+    # valid across restarts.
+    JWT_SECRET: str = ""
     JWT_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_EXPIRE_DAYS: int = 7
 
@@ -72,6 +76,52 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Singleton Settings instance. Cached so .env is read once at boot."""
     return Settings()
+
+
+def ensure_jwt_secret() -> str:
+    """Return JWT_SECRET, generating + persisting one if it was empty.
+
+    In dev mode the secret comes from .env at the project root. In a
+    bundled Tauri exe the .env is unreachable (PyInstaller temp dir /
+    wrong CWD), so Settings() sees the empty default. This function
+    generates a random 64-char hex string, writes it to .env in the
+    resolved APP_DATA_DIR, and clears the Settings cache so subsequent
+    get_settings() calls pick it up.
+    """
+    settings = get_settings()
+    if settings.JWT_SECRET:
+        return settings.JWT_SECRET
+
+    new_secret = secrets.token_hex(32)
+    _persist_env_var("JWT_SECRET", new_secret)
+    get_settings.cache_clear()
+    return new_secret
+
+
+def _persist_env_var(key: str, value: str) -> None:
+    """Write KEY=VALUE to .env in the data dir (or CWD), updating in-place."""
+    settings = get_settings()
+    if settings.APP_DATA_DIR:
+        env_path = Path(settings.APP_DATA_DIR) / ".env"
+    else:
+        env_path = Path(".env")
+
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    line = f"{key}={value}"
+
+    if env_path.exists():
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        replaced = False
+        for i, ln in enumerate(lines):
+            if ln.strip().startswith(f"{key}="):
+                lines[i] = line
+                replaced = True
+                break
+        if not replaced:
+            lines.append(line)
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    else:
+        env_path.write_text(line + "\n", encoding="utf-8")
 
 
 def default_app_data_dir() -> Path:

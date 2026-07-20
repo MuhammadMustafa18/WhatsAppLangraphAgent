@@ -2,7 +2,7 @@ mod baileys_sidecar;
 mod port_check;
 mod sidecar;
 
-use tauri::{Listener, Manager};
+use tauri::{Emitter, Listener, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,20 +25,33 @@ pub fn run() {
             // ── Spawn uvicorn (the FastAPI backend) ──
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // Helper to emit sidecar errors to the WebView so the loading
+                // screen can show the specific failure reason.
+                let emit_error = |id: &str, msg: &str| {
+                    let _ = handle.emit(
+                        "sidecar-error",
+                        serde_json::json!({"id": id, "error": msg}),
+                    );
+                };
+
                 if let Err(e) = sidecar::setup_sidecar(&handle) {
                     log::error!("Failed to start backend sidecar: {}", e);
+                    emit_error("backend", &e);
                     return;
                 }
                 log::info!("Sidecar started, waiting for backend...");
                 let uvicorn = match handle.try_state::<sidecar::SidecarManager>() {
                     Some(m) => m,
                     None => {
-                        log::error!("SidecarManager not registered");
+                        let msg = "SidecarManager not registered";
+                        log::error!("{}", msg);
+                        emit_error("backend", msg);
                         return;
                     }
                 };
                 if let Err(e) = uvicorn.wait_for_ready().await {
                     log::error!("Backend failed to start: {}", e);
+                    emit_error("backend", &e);
                     return;
                 }
                 log::info!("Backend is ready!");
@@ -46,6 +59,7 @@ pub fn run() {
                 // ── Spawn the Baileys WhatsApp gateway sidecar ──
                 if let Err(e) = baileys_sidecar::setup_baileys(&handle) {
                     log::warn!("Failed to start Baileys sidecar: {}", e);
+                    emit_error("baileys", &e);
                     log::warn!("WhatsApp gateway unavailable. No ngrok/OpenWA needed.");
                 } else {
                     let baileys = handle
@@ -53,6 +67,7 @@ pub fn run() {
                         .expect("BaileysManager not registered");
                     if let Err(e) = baileys.wait_for_ready().await {
                         log::error!("Baileys sidecar didn't come online: {}", e);
+                        emit_error("baileys", &e);
                     }
                 }
 

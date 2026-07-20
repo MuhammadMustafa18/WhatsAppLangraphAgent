@@ -22,9 +22,27 @@ import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
+# ── Load .env BEFORE any app imports ──────────────────────────────────
+# engine.py calls get_settings() at module level, which creates and
+# caches the Settings singleton. If .env isn't loaded yet, required
+# fields like JWT_SECRET won't be populated. Loading .env first
+# ensures os.environ has the values before Settings() is created.
+#
+# 1. Project root .env (dev mode: uvicorn runs from the repo)
+# 2. APP_DATA_DIR/.env (bundled exe: Tauri sidecar sets this env var)
 from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# APP_DATA_DIR may already be in os.environ (set by the Tauri sidecar)
+# or in the project-root .env we just loaded. Resolve it and try the
+# data-dir .env as well so secrets persisted by a prior run are found.
+_app_data = os.environ.get("APP_DATA_DIR", "")
+if _app_data:
+    load_dotenv(Path(_app_data) / ".env", override=False)
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -32,18 +50,13 @@ from sqlalchemy import select
 import httpx
 import structlog
 
-from app.core.config import get_settings
+from app.core.config import get_settings, ensure_jwt_secret
 from app.core.deps import get_db
 from app.core.logging import configure_logging, get_logger, RequestContextMiddleware, log_buffer
 from app.db.engine import async_session
-from app.db.models import Persona as PersonaRow, Provider as ProviderRow, User
+from app.db.models import Base, Persona as PersonaRow, Provider as ProviderRow, User
 from app.graph import build_graph
 from app.repositories import persona_repo, provider_repo
-
-# Load .env from the repo root when running natively (uvicorn app.main:app).
-# Docker compose uses `env_file: .env`, so this is a no-op there.
-from pathlib import Path
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 settings = get_settings()
 configure_logging()
@@ -181,12 +194,23 @@ async def _find_provider_by_name(db, user_id: str, name: str) -> str | None:
 async def lifespan(app: FastAPI):
     global _client
 
+    # Ensure JWT_SECRET exists (auto-generates + persists on first boot).
+    # In dev mode it comes from .env; in a bundled exe it's generated.
+    ensure_jwt_secret()
+
+    # Auto-create database tables if they don't exist. Safe to call on
+    # every startup — no-op when tables are already present. This replaces
+    # the manual `alembic upgrade head` requirement for fresh installs.
+    from app.db.engine import engine as _engine
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     # NOTE: alembic auto-migration DISABLED. On Windows + aiosqlite the
     # sync alembic command inside the lifespan's event loop hangs in
     # cleanup (after migrations finish, before the next log line).
-    # Workaround: run `alembic upgrade head` manually before starting
-    # uvicorn. The schema is stable so this is a one-time thing per
-    # dev session. See git log for the failed attempts.
+    # Workaround: use create_all above for initial setup; run
+    # `alembic upgrade head` manually only when schema changes.
+    # See git log for the failed attempts.
 
     from app.baileys_client import BaileysClient
     log.info("lifespan_baileys_connecting")
@@ -215,7 +239,19 @@ app.add_middleware(RequestContextMiddleware)
 # cover all of them without having to enumerate every variant.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|tauri\.localhost)(:\d+)?",
+    # Covers:
+    #   http://localhost, https://localhost — browser dev mode
+    #   http://127.0.0.1 — direct IP access
+    #   http://tauri.localhost, https://tauri.localhost — Tauri v2 WebView
+    #   tauri://localhost — Tauri v2 custom protocol (production)
+    #   tauri://<identifier> — Tauri v2 custom protocol with app identifier
+    allow_origins=[
+        "tauri://localhost",
+        "tauri://com.recluze.desktop",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ],
+    allow_origin_regex=r"^(?:https?://(?:localhost|127\.0\.0\.1|tauri\.localhost)(?::\d+)?|tauri://[a-zA-Z0-9.-]+)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

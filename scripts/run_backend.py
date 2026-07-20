@@ -7,9 +7,15 @@ from pathlib import Path
 import uvicorn
 from alembic.config import Config as AlembicConfig
 from alembic import command as alembic_command
-from app.core.config import get_settings, default_app_data_dir
+from app.core.config import ensure_jwt_secret, get_settings, default_app_data_dir
 
 
+# ── JWT secret bootstrap ──
+# The bundled binary runs outside the project root, so .env doesn't exist
+# at startup.  Ensure a JWT_SECRET is generated *before* the rest of the
+# app imports (which may call get_settings() and cache an empty secret).
+# See ensure_jwt_secret() in app.core.config for details.
+ensure_jwt_secret()
 def _run_migrations() -> None:
     """Run Alembic upgrades synchronously before the async event loop starts."""
     settings = get_settings()
@@ -52,4 +58,8 @@ if __name__ == "__main__":
         idx = sys.argv.index("--port")
         if idx + 1 < len(sys.argv):
             port = int(sys.argv[idx + 1])
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    # Use the string form so uvicorn imports app.main (which contains the
+    # FastAPI instance).  The `app` variable is NOT available because
+    # `run_backend.py` never imports it directly — that would trigger a
+    # circular dependency through main.py.
+    uvicorn.run("app.main:app", host="127.0.0.1", port=port, log_level="info")

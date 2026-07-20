@@ -90,10 +90,16 @@ def _load_or_create_key() -> bytes:
 def _persist_key(key: str) -> None:
     """Write ENCRYPTION_KEY=value to the .env file the app was loaded from.
 
+    Uses APP_DATA_DIR (same as _persist_env_var) so the bundled EXE writes
+    to the correct per-user data directory instead of CWD.
     Updates the file in place if the key already exists, otherwise appends.
     Bypasses pydantic-settings so we don't need a Settings reload signal.
     """
-    env_path = Path(".env")
+    _settings = get_settings()
+    if _settings.APP_DATA_DIR:
+        env_path = Path(_settings.APP_DATA_DIR) / ".env"
+    else:
+        env_path = Path(".env")
     line = f"ENCRYPTION_KEY={key}"
     if env_path.exists():
         text = env_path.read_text(encoding="utf-8")
