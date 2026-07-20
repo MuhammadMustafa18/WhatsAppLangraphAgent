@@ -8,7 +8,9 @@ Provides:
 
 from __future__ import annotations
 
+import io
 import logging
+import sys
 import uuid
 from collections import deque
 from typing import Any
@@ -62,6 +64,9 @@ def configure_logging() -> None:
     Dev:    colorful console output (LOG_FORMAT=dev or unset).
     Prod:   line-delimited JSON (LOG_FORMAT=json).
     """
+    if sys.stdout is not None and sys.stdout.encoding is not None and sys.stdout.encoding.upper() != "UTF-8":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
     settings = get_settings()
     is_dev = settings.LOG_FORMAT != "json"
 
