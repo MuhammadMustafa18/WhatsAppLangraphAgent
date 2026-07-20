@@ -228,15 +228,6 @@ impl BaileysManager {
         Ok(())
     }
 
-    /// Check if the sidecar process is still running.
-    pub fn is_running(&self) -> bool {
-        if let Ok(mut process) = self.process.lock() {
-            if let Some(ref mut child) = *process {
-                return child.try_wait().ok().flatten().is_none();
-            }
-        }
-        false
-    }
 }
 
 

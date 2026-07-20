@@ -1,4 +1,4 @@
-# whatsapp-bot-langgraph
+# recluze
 
 A teaching repo for a LangGraph course. We build a WhatsApp-backed bot in
 small iterations; each iteration fits in a 5–10 minute explanation.

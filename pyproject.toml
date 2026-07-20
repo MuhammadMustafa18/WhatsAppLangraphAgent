@@ -1,5 +1,5 @@
 [project]
-name = "whatsapp-bot-langgraph"
+name = "recluze"
 version = "0.1.0"
 description = "LangGraph course — iteration 5: persistent memory via SqliteSaver"
 requires-python = ">=3.11"

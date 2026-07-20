@@ -20,7 +20,7 @@ EDUCATION
 - GPA / coursework: [FILL IN]
 
 EXPERIENCE
-- whatsapp-bot-langgraph: a teaching repo for a LangGraph course, built
+- recluze: a teaching repo for a LangGraph course, built
   with FastAPI + LangGraph + OpenWA. Each iteration is its own commit;
   class is structured around small 5-10 minute lectures.
 - whatsapp-ai-assistant: production portfolio piece. OpenWA-backed

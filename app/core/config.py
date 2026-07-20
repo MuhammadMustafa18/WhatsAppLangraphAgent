@@ -81,15 +81,15 @@ def default_app_data_dir() -> Path:
     `app.sqlite` (no path prefix). Tests / CLI / sidecar all share
     this directory so they see the same SQLite file.
 
-    Windows: %APPDATA%\\com.whatsapp-bot.app\\data
-    macOS:   ~/Library/Application Support/com.whatsapp-bot.app/data
-    Linux:   $XDG_DATA_HOME/com.whatsapp-bot.app/data or
-             ~/.local/share/com.whatsapp-bot.app/data
+    Windows: %APPDATA%\\com.recluze.app\\data
+    macOS:   ~/Library/Application Support/com.recluze.app/data
+    Linux:   $XDG_DATA_HOME/com.recluze.app/data or
+             ~/.local/share/com.recluze.app/data
     """
     import os
     import sys
 
-    app_name = "com.whatsapp-bot.app"
+    app_name = "com.recluze.app"
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         return Path(base) / app_name / "data"

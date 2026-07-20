@@ -1,12 +1,12 @@
 [package]
-name = "whatsapp-bot"
+name = "recluze"
 version = "0.1.0"
-description = "WhatsApp Bot Desktop"
+description = "Recluze Desktop"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "whatsapp_bot_lib"
+name = "recluze_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -46,7 +46,7 @@ export default function Layout() {
               to="/"
               className="font-display text-card-heading tracking-tight text-ink"
             >
-              WhatsApp Bot
+              Recluze
             </Link>
           </div>
 

@@ -109,9 +109,9 @@ impl SidecarManager {
         } else {
             let exe_dir = app_dir.join("sidecars").join("python");
             let api_exe = exe_dir.join(if cfg!(windows) {
-                "whatsapp-bot-api.exe"
+                "recluze-api.exe"
             } else {
-                "whatsapp-bot-api"
+                "recluze-api"
             });
             if !api_exe.exists() {
                 return Err(format!("API binary not found at {:?}", api_exe));
@@ -246,15 +246,6 @@ impl SidecarManager {
         Ok(())
     }
 
-    /// Check if the backend process is still running.
-    pub fn is_running(&self) -> bool {
-        if let Ok(mut process) = self.process.lock() {
-            if let Some(ref mut child) = *process {
-                return child.try_wait().ok().flatten().is_none();
-            }
-        }
-        false
-    }
 }
 
 /// Setup the sidecar: start backend, wait for ready, register cleanup on exit.
@@ -263,7 +254,7 @@ pub fn setup_sidecar(app: &AppHandle) -> Result<(), String> {
     let manager = SidecarManager::new();
 
     // Get the app data directory (the per-user app folder, e.g.
-    // %APPDATA%\com.whatsapp-bot.app on Windows). Inside that we keep
+    // %APPDATA%\com.recluze.app on Windows). Inside that we keep
     // runtime data in a 'data' subdir so the app folder can also hold
     // future config files, logs, etc. without collision.
     let app_dir = app.path().app_data_dir().map_err(|e| {

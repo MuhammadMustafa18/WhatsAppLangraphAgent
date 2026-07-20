@@ -203,7 +203,7 @@ async def lifespan(app: FastAPI):
         await _client.aclose()
 
 
-app = FastAPI(title="whatsapp-bot-langgraph", lifespan=lifespan)
+app = FastAPI(title="recluze", lifespan=lifespan)
 
 # Request-id injected into every log line
 app.add_middleware(RequestContextMiddleware)
