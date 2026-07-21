@@ -22,7 +22,7 @@ if not exist "node_modules" (
 )
 call npm run build
 if %errorlevel% neq 0 exit /b %errorlevel%
-call bun build --compile ./dist/index.js --outfile baileys-sidecar
+call npm run compile
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo === Step 2: Build Python backend ===

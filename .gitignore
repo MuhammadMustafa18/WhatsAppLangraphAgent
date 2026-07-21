@@ -22,6 +22,9 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+# Windows device-name artifacts created by `> nul` redirection
+nul
+*.stackdump
 
 # Tool state files (internal)
 .mimocode/
@@ -54,6 +57,7 @@ desktop/dist/
 baileys-sidecar/node_modules/
 baileys-sidecar/test-baileys.js
 baileys-sidecar/baileys-sidecar.exe
+baileys-sidecar/baileys-sidecar.blob
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 

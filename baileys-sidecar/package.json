@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "tsx baileys-sidecar.ts",
-    "build": "esbuild baileys-sidecar.ts --bundle --platform=node --outfile=dist/index.js",
-    "compile": "bun build --compile ./dist/index.js --outfile baileys-sidecar"
+    "build": "esbuild baileys-sidecar.ts --bundle --platform=node --format=cjs --external:jimp --external:sharp --external:link-preview-js --outfile=dist/index.cjs",
+    "compile": "node build-sea.cjs"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "@whiskeysockets/baileys": "^6.7.18",
     "express": "^4.21.0",
+    "jimp": "^0.16.13",
+    "link-preview-js": "^3.2.0",
     "pino": "^9.4.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.32.6",
     "ws": "^8.18.0"
   },
   "devDependencies": {

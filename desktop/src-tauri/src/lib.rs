@@ -1,3 +1,4 @@
+mod baileys_proxy;
 mod baileys_sidecar;
 mod port_check;
 mod sidecar;
@@ -15,6 +16,16 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            baileys_proxy::proxy_health,
+            baileys_proxy::baileys_proxy,
+            baileys_proxy::baileys_proxy_post,
+            baileys_proxy::baileys_health,
+            baileys_proxy::baileys_get_qr,
+            baileys_proxy::baileys_get_status,
+            baileys_proxy::baileys_logout,
+            baileys_proxy::baileys_send_text,
+        ])
         .setup(|app| {
             // ── Startup: kill stale processes & show service status ──
             log::info!("=== Tauri Startup ===");
@@ -68,6 +79,10 @@ pub fn run() {
                     if let Err(e) = baileys.wait_for_ready().await {
                         log::error!("Baileys sidecar didn't come online: {}", e);
                         emit_error("baileys", &e);
+                    } else {
+                        // Start WebSocket event relay so the frontend can receive
+                        // QR / status updates via Tauri events instead of direct WS.
+                        baileys_proxy::spawn_ws_relay(&handle);
                     }
                 }
 

@@ -94,7 +94,7 @@ export default function App() {
 
     // ── Poll health endpoints ──
     const pollOne = (id: SidecarId) =>
-      waitForHealthy(SIDECARS[id].url, signal, STARTUP_TIMEOUT_MS)
+      waitForHealthy("", signal, id, STARTUP_TIMEOUT_MS)
         .then(() => {
           if (signal.aborted) return;
           healthyRef.current[id] = true;

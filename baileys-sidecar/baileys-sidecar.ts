@@ -38,13 +38,22 @@ type ConnectionStatus =
   | "disconnected"
   | "qr"
   | "connecting"
-  | "connected";
+  | "connected"
+  | "recovering";
 
 let connectionStatus: ConnectionStatus = "disconnected";
 let qrCodeData: string | null = null;
 let wsClients: Set<WebSocket> = new Set();
 let sock: ReturnType<typeof makeWASocket>;
 let sockGeneration = 0;
+
+/// How long Baileys is allowed to stay in `connecting` without producing
+/// a QR or advancing to `open`/`close`. If exceeded, the watchdog force-
+/// closes the socket, wipes auth, and restarts.
+const CONNECTING_TIMEOUT_MS = 120_000;
+
+/// Active watchdog timer for the current socket generation.
+let connectingTimer: NodeJS.Timeout | null = null;
 
 // ── Broadcast ───────────────────────────────────────────────────────────
 
@@ -89,6 +98,12 @@ async function startSocket() {
     browser: ["Windows", "Chrome", "130"],
   });
 
+  // Clear any watchdog timer from a previous generation before we start fresh.
+  if (connectingTimer) {
+    clearTimeout(connectingTimer);
+    connectingTimer = null;
+  }
+
   sock = newSock;
 
   newSock.ev.on("connection.update", async (update) => {
@@ -97,16 +112,53 @@ async function startSocket() {
 
     console.log("[baileys] connection.update:", JSON.stringify({ connection, hasQr: !!qr, hasError: !!lastDisconnect?.error }));
 
+    // ── Watchdog: if we stay stuck on "connecting" without producing a QR
+    // or reaching "open"/"close" within 15s, Baileys is hung (typically
+    // a crypto/handshake issue in the pkg-bundled runtime). Force a fresh
+    // auth state and restart the socket. This self-heals the common
+    // "Connecting forever, no QR" failure mode in packaged builds.
+    if (connection === "connecting" && !qr) {
+      if (!connectingTimer) {
+        connectingTimer = setTimeout(async () => {
+          if (gen !== sockGeneration) return;
+          console.warn(
+            "[baileys] stuck on 'connecting' for %dms — clearing auth and restarting",
+            CONNECTING_TIMEOUT_MS,
+          );
+          connectingTimer = null;
+          broadcast("status", { status: "recovering" });
+          try {
+            sock.end(undefined);
+          } catch (err) {
+            console.warn("[baileys] error ending stuck socket:", err);
+          }
+          await clearAuthDir();
+          startSocket();
+        }, CONNECTING_TIMEOUT_MS);
+      }
+    } else if (connectingTimer) {
+      clearTimeout(connectingTimer);
+      connectingTimer = null;
+    }
+
     if (qr) {
       qrCodeData = qr;
-      connectionStatus = "qr";
+      // Don't overwrite status with "connecting" when QR is available —
+      // the React UI uses status === "qr" to decide whether to fetch /qr.
+      if (connection !== "connecting") {
+        connectionStatus = "qr";
+      }
       const qrImage = await generateQR(qr);
       broadcast("qr", { qrImage, qrData: qr });
       console.log("[baileys] QR code generated — scan with WhatsApp");
     }
 
     if (connection) {
-      connectionStatus = connection as ConnectionStatus;
+      // Only update status if we're not holding a QR state — prevents
+      // "connecting" from clobbering "qr" on the same update tick.
+      if (!qr || connection === "open" || connection === "close") {
+        connectionStatus = connection as ConnectionStatus;
+      }
       broadcast("status", { status: connection });
 
       if (connection === "open") {

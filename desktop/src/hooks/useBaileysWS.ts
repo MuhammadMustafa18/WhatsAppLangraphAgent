@@ -1,63 +1,28 @@
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useWhatsAppStore } from "../stores/whatsapp";
 
-const HTTP_URL = "http://127.0.0.1:2786";
-
 /**
- * Polls Baileys sidecar status + QR via HTTP every 2s, and also connects
- * to the WebSocket for live updates.
+ * Polls Baileys sidecar status + QR via Tauri IPC (avoids mixed-content
+ * blocking in production builds where the origin is https://tauri.localhost),
+ * and also listens for live updates relayed through the Rust WebSocket proxy.
  *
- * The HTTP polling is the primary channel — the WS is opportunistic.
- * In the production Tauri WebView (https://tauri.localhost) WebSocket
- * connections to ws://127.0.0.1 may be blocked as mixed content, so you
- * can't rely on WS alone.
+ * The IPC polling is the primary channel — the event listener is opportunistic.
+ * Both bypass the browser's mixed-content policy because the requests originate
+ * from the Rust process, not the WebView.
  */
 export function useBaileysWebSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const attemptsRef = useRef(0);
 
-  const { setStatus, setQr, clearQr, setSidecarOnline } =
+  const { setStatus, setQr, clearQr, setSidecarOnline, setJid } =
     useWhatsAppStore();
 
   useEffect(() => {
     let cancelled = false;
 
-    // ── WebSocket (best-effort) ─────────────────────────────────────
-    function connectWS() {
-      const ws = new WebSocket("ws://127.0.0.1:2787");
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        attemptsRef.current = 0;
-        setSidecarOnline(true);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const d = JSON.parse(event.data);
-          if (d.event === "qr") {
-            setQr(d.qrImage, d.qrData);
-          } else if (d.event === "status") {
-            mapStatus(d.status);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
-        attemptsRef.current += 1;
-        const delay = Math.min(1000 * 2 ** attemptsRef.current, 30_000);
-        retryRef.current = setTimeout(connectWS, delay);
-      };
-
-      ws.onerror = () => ws.close();
-    }
-
-    // ── Status mapping (used by both WS and HTTP poll) ──────────────
+    // ── Status mapping (used by both event listener and IPC poll) ─────
     function mapStatus(s: string) {
       if (s === "open") {
         setStatus("connected");
@@ -70,26 +35,57 @@ export function useBaileysWebSocket() {
       } else if (s === "qr") {
         setStatus("qr");
       } else {
-        // "connecting", "disconnected", or anything else — preserve as-is
         setStatus(s as any);
       }
     }
 
-    // ── HTTP poll ───────────────────────────────────────────────────
+    // ── Tauri event listener (best-effort, relayed by Rust) ───────────
+    async function setupEventListener() {
+      try {
+        const unlisten = await listen<string>("baileys-ws-event", (event) => {
+          if (cancelled) return;
+          try {
+            const d = JSON.parse(event.payload);
+            if (d.event === "qr" && d.qrImage) {
+              setQr(d.qrImage, d.qrData ?? "");
+            } else if (d.event === "status") {
+              mapStatus(d.status);
+            }
+          } catch {
+            /* ignore */
+          }
+        });
+        unlistenRef.current = unlisten;
+        setSidecarOnline(true);
+      } catch {
+        // Not running inside Tauri — no-op
+      }
+    }
+
+    // ── IPC poll ──────────────────────────────────────────────────────
     async function poll() {
       if (cancelled) return;
       try {
-        const r = await fetch(`${HTTP_URL}/status`);
-        const data = await r.json();
+        const raw: string = await invoke("baileys_proxy", { path: "/health" });
+        const data = JSON.parse(raw);
         setSidecarOnline(true);
-        mapStatus(data.status);
+        mapStatus(data.connection);
 
-        // If status is "qr", also grab the QR image via HTTP
-        if (data.status === "qr") {
-          const qrResp = await fetch(`${HTTP_URL}/qr`);
-          const qrData = await qrResp.json();
+        // Fetch QR whenever the server says it has one
+        if (data.hasQr) {
+          const qrRaw: string = await invoke("baileys_proxy", { path: "/qr" });
+          const qrData = JSON.parse(qrRaw);
           if (qrData.qrImage) {
             setQr(qrData.qrImage, qrData.qrData ?? "");
+          }
+        }
+
+        // Also fetch JID if connected
+        if (data.connection === "open") {
+          const statusRaw: string = await invoke("baileys_proxy", { path: "/status" });
+          const statusData = JSON.parse(statusRaw);
+          if (statusData.jid) {
+            setJid(statusData.jid);
           }
         }
       } catch {
@@ -97,17 +93,14 @@ export function useBaileysWebSocket() {
       }
     }
 
-    // ── Start ──────────────────────────────────────────────────────
-    // Fire immediately, then every 2s
+    // ── Start ─────────────────────────────────────────────────────────
+    setupEventListener();
     poll();
     pollRef.current = setInterval(poll, 2000);
 
-    connectWS();
-
     return () => {
       cancelled = true;
-      if (wsRef.current) wsRef.current.close();
-      if (retryRef.current) clearTimeout(retryRef.current);
+      if (unlistenRef.current) unlistenRef.current();
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

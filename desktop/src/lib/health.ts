@@ -1,6 +1,12 @@
 // Single source of truth for sidecar endpoints and a tiny health-poll helper.
 // Both sidecars are spawned by the Tauri Rust process; the WebView only knows
 // them by URL. Keep these in sync with src-tauri/src/port_check.rs.
+//
+// In production builds (https://tauri.localhost), direct HTTP to 127.0.0.1 is
+// blocked as mixed content. We route all sidecar requests through Tauri IPC
+// commands that the Rust process handles, bypassing the browser restriction.
+
+import { invoke } from "@tauri-apps/api/core";
 
 export const BACKEND_URL = "http://127.0.0.1:18234";
 export const BAILEYS_URL = "http://127.0.0.1:2786";
@@ -14,9 +20,9 @@ export interface SidecarErrorPayload {
   error: string;
 }
 
-export const SIDECARS: Record<SidecarId, { label: string; url: string }> = {
-  backend: { label: "API server", url: `${BACKEND_URL}/health` },
-  baileys: { label: "WhatsApp gateway", url: `${BAILEYS_URL}/health` },
+export const SIDECARS: Record<SidecarId, { label: string }> = {
+  backend: { label: "API server" },
+  baileys: { label: "WhatsApp gateway" },
 };
 
 /**
@@ -38,11 +44,17 @@ export async function listenForSidecarErrors(
   }
 }
 
-// Poll a sidecar's /health until it returns 2xx, the abort signal fires, or
-// the timeout elapses. Resolves with "ok"; rejects with "timeout" on deadline.
+/**
+ * Poll a sidecar's /health endpoint until it returns OK, the abort signal
+ * fires, or the timeout elapses.
+ *
+ * Uses Tauri IPC (`invoke("proxy_health", ...)`) so it works in both dev and
+ * production builds without mixed-content issues.
+ */
 export function waitForHealthy(
-  url: string,
+  _url: string, // kept for API compat; ignored in favour of IPC
   signal: AbortSignal,
+  sidecarId: SidecarId,
   timeoutMs = 30_000,
   intervalMs = 500,
 ): Promise<void> {
@@ -67,8 +79,9 @@ export function waitForHealthy(
     const tick = async () => {
       if (signal.aborted) return;
       try {
-        const res = await fetch(url);
-        if (res.ok) {
+        const raw: string = await invoke("proxy_health", { sidecarId });
+        const data = JSON.parse(raw);
+        if (data.status === "ok") {
           cleanup();
           resolve();
           return;

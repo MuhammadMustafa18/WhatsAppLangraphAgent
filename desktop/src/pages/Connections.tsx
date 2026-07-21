@@ -1,9 +1,7 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useBaileysWebSocket } from "../hooks/useBaileysWS";
 import { useWhatsAppStore, ConnectionStatus } from "../stores/whatsapp";
-
-// Direct to Baileys sidecar (port 2786), not via the FastAPI backend (18234).
-const BAILEYS_URL = "http://127.0.0.1:2786";
 
 const STATUS_LABELS: Record<
   ConnectionStatus,
@@ -38,12 +36,7 @@ export default function Connections() {
     setLoggingOut(true);
     setLogoutError(null);
     try {
-      const res = await fetch(`${BAILEYS_URL}/logout`, { method: "POST" });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      // Optimistically clear local state — the WS will also push "loggedOut"
-      // and a fresh QR, but resetting here avoids a stale "Connected" flicker.
+      await invoke("baileys_logout");
       reset();
     } catch (err) {
       setLogoutError(

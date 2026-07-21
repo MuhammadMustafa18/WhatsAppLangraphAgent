@@ -8,7 +8,7 @@ setlocal enabledelayedexpansion
 set ROOT=%~dp0..
 set VENV=%ROOT%\.venv
 
-echo === Step 1: Build Baileys sidecar (Node.js → standalone .exe) ===
+echo === Step 1: Build Baileys sidecar (Node.js → standalone .exe via bun) ===
 cd /d "%ROOT%\baileys-sidecar"
 if not exist "node_modules" (
     echo Installing baileys-sidecar dependencies...
@@ -16,7 +16,7 @@ if not exist "node_modules" (
 )
 call npm run build
 if %errorlevel% neq 0 exit /b %errorlevel%
-call bun build --compile ./dist/index.js --outfile baileys-sidecar
+call npm run compile
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo === Step 2: Build Python backend (PyInstaller → recluze-api.exe) ===

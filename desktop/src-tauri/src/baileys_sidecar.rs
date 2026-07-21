@@ -134,23 +134,49 @@ impl BaileysManager {
 
         log::info!("Baileys sidecar started: pid={}", child.id());
 
+        // Also mirror stdout/stderr to a file under app_data_dir so we can
+        // diagnose issues after the fact (the GUI app's stderr is swallowed
+        // by Windows in packaged builds). File path: <app_data>/baileys.log
+        let log_path = app_dir.join("baileys.log");
+        // Truncate on each start so logs don't grow unbounded.
+        let _ = std::fs::File::create(&log_path);
+        log::info!("Baileys sidecar logs: {}", log_path.display());
+        let log_path_stdout = log_path.clone();
+        let log_path_stderr = log_path.clone();
+
         // Drain stdout/stderr in background threads
         if let Some(stdout) = child.stdout.take() {
             let _ = std::thread::spawn(move || {
-                use std::io::{BufRead, BufReader};
+                use std::io::{BufRead, BufReader, Write};
+                use std::fs::OpenOptions;
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
                     log::info!("[baileys] {}", line);
+                    if let Ok(mut f) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log_path_stdout)
+                    {
+                        let _ = writeln!(f, "[stdout] {}", line);
+                    }
                 }
                 log::info!("[baileys] stdout closed");
             });
         }
         if let Some(stderr) = child.stderr.take() {
             let _ = std::thread::spawn(move || {
-                use std::io::{BufRead, BufReader};
+                use std::io::{BufRead, BufReader, Write};
+                use std::fs::OpenOptions;
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
                     log::warn!("[baileys] {}", line);
+                    if let Ok(mut f) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log_path_stderr)
+                    {
+                        let _ = writeln!(f, "[stderr] {}", line);
+                    }
                 }
                 log::info!("[baileys] stderr closed");
             });
