@@ -1,30 +1,32 @@
 import { useEffect, useRef } from "react";
 import { useWhatsAppStore } from "../stores/whatsapp";
 
-const WS_URL = "ws://127.0.0.1:2787";
+const HTTP_URL = "http://127.0.0.1:2786";
 
 /**
- * Connects to the Baileys sidecar WebSocket and updates the WhatsApp store
- * with live QR codes and connection status.
+ * Polls Baileys sidecar status + QR via HTTP every 2s, and also connects
+ * to the WebSocket for live updates.
  *
- * Automatically reconnects on disconnect with exponential backoff.
+ * The HTTP polling is the primary channel — the WS is opportunistic.
+ * In the production Tauri WebView (https://tauri.localhost) WebSocket
+ * connections to ws://127.0.0.1 may be blocked as mixed content, so you
+ * can't rely on WS alone.
  */
 export function useBaileysWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attemptsRef = useRef(0);
 
-  const {
-    setStatus,
-    setQr,
-    clearQr,
-    setJid,
-    setSidecarOnline,
-  } = useWhatsAppStore();
+  const { setStatus, setQr, clearQr, setSidecarOnline } =
+    useWhatsAppStore();
 
   useEffect(() => {
-    function connect() {
-      const ws = new WebSocket(WS_URL);
+    let cancelled = false;
+
+    // ── WebSocket (best-effort) ─────────────────────────────────────
+    function connectWS() {
+      const ws = new WebSocket("ws://127.0.0.1:2787");
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -34,103 +36,79 @@ export function useBaileysWebSocket() {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-
-          switch (data.event) {
-            case "qr":
-              setQr(data.qrImage, data.qrData);
-              break;
-
-            case "status":
-              if (data.status === "open") {
-                setStatus("connected");
-                clearQr();
-              } else if (data.status === "close") {
-                setStatus("disconnected");
-              } else if (data.status === "loggedOut") {
-                setStatus("loggedOut");
-                clearQr();
-              } else {
-                setStatus(data.status);
-              }
-              break;
+          const d = JSON.parse(event.data);
+          if (d.event === "qr") {
+            setQr(d.qrImage, d.qrData);
+          } else if (d.event === "status") {
+            mapStatus(d.status);
           }
         } catch {
-          // Ignore malformed messages
+          /* ignore */
         }
       };
 
       ws.onclose = () => {
         wsRef.current = null;
-
-        // Auto-reconnect with exponential backoff (max 30s)
         attemptsRef.current += 1;
         const delay = Math.min(1000 * 2 ** attemptsRef.current, 30_000);
-
-        retryRef.current = setTimeout(connect, delay);
+        retryRef.current = setTimeout(connectWS, delay);
       };
 
-      ws.onerror = () => {
-        ws.close();
-      };
+      ws.onerror = () => ws.close();
     }
 
-    // Fetch initial status from HTTP endpoint (faster than waiting for WS).
-    // The WebView can mount before the sidecar is bound, so retry with
-    // backoff until it answers — otherwise sidecarOnline gets stuck false.
-    // After fast retries exhaust, fall back to a slow background poll so a
-    // late-arriving sidecar still gets picked up.
-    let slowPoll: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-
-    function applyStatus(data: { status: string; jid?: string | null }) {
-      if (data.status === "open") {
+    // ── Status mapping (used by both WS and HTTP poll) ──────────────
+    function mapStatus(s: string) {
+      if (s === "open") {
         setStatus("connected");
-        if (data.jid) setJid(data.jid);
-      } else if (data.status === "qr") {
-        // QR will come via WebSocket
+        clearQr();
+      } else if (s === "close") {
+        setStatus("disconnected");
+      } else if (s === "loggedOut") {
+        setStatus("loggedOut");
+        clearQr();
+      } else if (s === "qr") {
         setStatus("qr");
       } else {
-        setStatus("disconnected");
+        // "connecting", "disconnected", or anything else — preserve as-is
+        setStatus(s as any);
       }
-      setSidecarOnline(true);
     }
 
-    function fetchInitialStatus(attempts = 0) {
+    // ── HTTP poll ───────────────────────────────────────────────────
+    async function poll() {
       if (cancelled) return;
-      fetch("http://127.0.0.1:2786/status")
-        .then((r) => r.json())
-        .then(applyStatus)
-        .catch(() => {
-          if (cancelled) return;
-          if (attempts < 20) {
-            // 20 × 500ms = 10s ceiling — well past the sidecar's 30s ready
-            // timeout we expect during a cold start.
-            setTimeout(() => fetchInitialStatus(attempts + 1), 500);
-          } else {
-            setSidecarOnline(false);
-            // Slow background poll — keeps checking every 3s until the
-            // sidecar answers, so a late-bound sidecar still flips the UI.
-            slowPoll = setTimeout(() => fetchInitialStatus(0), 3000);
-          }
-        });
-    }
-    fetchInitialStatus();
+      try {
+        const r = await fetch(`${HTTP_URL}/status`);
+        const data = await r.json();
+        setSidecarOnline(true);
+        mapStatus(data.status);
 
-    connect();
+        // If status is "qr", also grab the QR image via HTTP
+        if (data.status === "qr") {
+          const qrResp = await fetch(`${HTTP_URL}/qr`);
+          const qrData = await qrResp.json();
+          if (qrData.qrImage) {
+            setQr(qrData.qrImage, qrData.qrData ?? "");
+          }
+        }
+      } catch {
+        setSidecarOnline(false);
+      }
+    }
+
+    // ── Start ──────────────────────────────────────────────────────
+    // Fire immediately, then every 2s
+    poll();
+    pollRef.current = setInterval(poll, 2000);
+
+    connectWS();
 
     return () => {
       cancelled = true;
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (retryRef.current) {
-        clearTimeout(retryRef.current);
-      }
-      if (slowPoll) {
-        clearTimeout(slowPoll);
-      }
+      if (wsRef.current) wsRef.current.close();
+      if (retryRef.current) clearTimeout(retryRef.current);
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

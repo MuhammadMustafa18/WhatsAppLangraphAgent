@@ -278,6 +278,15 @@ async function main() {
     });
   });
 
+  app.get("/qr", async (_req, res) => {
+    if (!qrCodeData) {
+      res.json({ qrImage: null, qrData: null });
+      return;
+    }
+    const qrImage = await generateQR(qrCodeData);
+    res.json({ qrImage, qrData: qrCodeData });
+  });
+
   const httpServer = createServer(app);
   httpServer.listen(HTTP_PORT, () => {
     console.log(

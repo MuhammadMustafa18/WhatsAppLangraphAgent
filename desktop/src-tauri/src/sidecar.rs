@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use reqwest::Client;
+#[cfg(windows)] use std::os::windows::process::CommandExt;
 
 use crate::port_check::BACKEND_PORT;
 
@@ -129,13 +130,15 @@ impl SidecarManager {
             cmd, args, cwd
         );
 
-        let mut child = Command::new(&cmd)
-            .args(&args)
+        let mut cmd = Command::new(&cmd);
+        cmd.args(&args)
             .current_dir(&cwd)
             .env("APP_DATA_DIR", app_dir.to_str().unwrap_or("./data"))
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))?;
 
         log::info!(

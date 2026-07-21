@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use reqwest::Client;
+#[cfg(windows)] use std::os::windows::process::CommandExt;
 
 /// Default port for the Baileys sidecar HTTP API.
 pub const BAILEYS_PORT: u16 = 2786;
@@ -118,15 +119,17 @@ impl BaileysManager {
             cmd, args, cwd
         );
 
-        let mut child = Command::new(&cmd)
-            .args(&args)
+        let mut cmd = Command::new(&cmd);
+        cmd.args(&args)
             .current_dir(&cwd)
             .env("BAILEYS_PORT", BAILEYS_PORT.to_string())
             .env("APP_DATA_DIR", app_dir.to_str().unwrap_or("./data"))
             .env("BACKEND_URL", "http://127.0.0.1:18234")
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start baileys sidecar: {}", e))?;
 
         log::info!("Baileys sidecar started: pid={}", child.id());
@@ -285,20 +288,19 @@ pub fn setup_baileys(app: &AppHandle) -> Result<(), String> {
         e.to_string()
     })?;
 
-    // Ensure sidecar binary is present in release mode
+    // Ensure sidecar binary is present in release mode (overwrites on every
+    // launch so app upgrades always ship the latest version).
     if !cfg!(debug_assertions) {
         let exe_name = if cfg!(windows) { "baileys-sidecar.exe" } else { "baileys-sidecar" };
         let dest = data_dir.join("sidecars").join(exe_name);
-        if !dest.exists() {
-            let res_dir = app.path().resource_dir().map_err(|e| format!("resource_dir: {}", e))?;
-            let src = res_dir.join("sidecars").join(exe_name);
-            if !src.exists() {
-                return Err(format!("baileys-sidecar not found in resources at {:?}", src));
-            }
-            fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
-            fs::copy(&src, &dest).map_err(|e| format!("copy {:?} -> {:?}: {}", src, dest, e))?;
-            log::info!("Copied baileys-sidecar: {:?} -> {:?}", src, dest);
+        let res_dir = app.path().resource_dir().map_err(|e| format!("resource_dir: {}", e))?;
+        let src = res_dir.join("sidecars").join(exe_name);
+        if !src.exists() {
+            return Err(format!("baileys-sidecar not found in resources at {:?}", src));
         }
+        fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+        fs::copy(&src, &dest).map_err(|e| format!("copy {:?} -> {:?}: {}", src, dest, e))?;
+        log::info!("Copied baileys-sidecar: {:?} -> {:?}", src, dest);
     }
 
     let manager = BaileysManager::new();
