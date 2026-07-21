@@ -15,6 +15,10 @@ No Python. No Node. No Docker. No cloud account. Download the installer, double-
   </a>
 </p>
 
+<p align="center">
+  <video src="https://github.com/MuhammadMustafa18/Recluze/releases/download/v0.1.3/recluze-link.mp4" controls width="800"></video>
+</p>
+
 ## Quick start
 
 ### 1. Download
